@@ -2,7 +2,7 @@ from customtkinter import *
 from PIL import Image
 from tkinter import messagebox
 from views.registration import RegistrationWindow
-from views.homepage import HomepageWindow
+from views.contractor_homepage import HomepageWindow
 from views.admin import AdminWindow
 from models.database import authenticate_user
 

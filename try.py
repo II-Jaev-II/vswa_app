@@ -1,113 +1,73 @@
+import customtkinter
+from tkinter import *
+from tkinter import filedialog
 import tkinter as tk
+from PIL import ImageTk, Image
+import os
+import shutil
+import random  
+import string
 from tkinter import messagebox
-import sqlite3
 
-# Database Setup
-def setup_database():
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
+customtkinter.set_appearance_mode("dark")
+customtkinter.set_default_color_theme("blue")
+
+app = customtkinter.CTk()
+app.title("Python Custom Tkinter Upload Image")
+app.geometry("300x200")
+
+def open_add_image_window():
+    add_image_window = Toplevel(app)
+    add_image_window.title("Add Image")
+    add_image_window.geometry("480x380")
+    
+    frame = customtkinter.CTkLabel(add_image_window, text="")
+    frame.grid(row=0, column=0, sticky="w", padx=50, pady=20)
+    
+    def setPreviewPic(filepath):
+        global img
+        img = Image.open(filepath)
+        img = img.resize((250, 250))
+        img = ImageTk.PhotoImage(img)
+        lbl_show_pic.config(image=img)
+        lbl_show_pic.image = img
+        pathEntry.delete(0, END)
+        pathEntry.insert(0, filepath)
+
+    def selectPic():
+        global filename
+        filename = filedialog.askopenfilename(
+            initialdir=os.getcwd(),
+            title="Select Image",
+            filetypes=[("images files", "*.png *.jpg *.jpeg"),]
         )
-    """)
-    conn.commit()
-    conn.close()
+        if filename:
+            setPreviewPic(filename)
 
-# Function to handle login
-def login():
-    username = username_entry.get()
-    password = password_entry.get()
-
-    if not username or not password:
-        messagebox.showerror("Error", "All fields are required!")
-        return
-
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
-    user = cursor.fetchone()
-    conn.close()
-
-    if user:
-        messagebox.showinfo("Success", f"Welcome, {username}!")
-        open_homepage(username)  # Redirect to homepage
-        root.destroy()  # Close the login window
-    else:
-        messagebox.showerror("Error", "Invalid username or password")
-
-# Function to open the registration window
-def open_registration():
-    def register():
-        reg_username = reg_username_entry.get()
-        reg_password = reg_password_entry.get()
-
-        if not reg_username or not reg_password:
-            messagebox.showerror("Error", "All fields are required!")
+    def savePic():
+        if not filename:
+            messagebox.showerror("Error", "No file selected!")
             return
+        filenameSplitted = filename.split('.')
+        randomText = ''.join((random.choice(string.ascii_lowercase) for x in range(12)))
+        shutil.copy(filename, f"./images/{randomText}.{filenameSplitted[1]}")
+        setPreviewPic("./images/default.png")
+        messagebox.showinfo("Success", "Uploaded Successfully")
+    
+    selectBtn = customtkinter.CTkButton(frame, text="Browse Image", width=50, command=selectPic)
+    pathEntry = customtkinter.CTkEntry(frame, width=200)
+    saveBtn = customtkinter.CTkButton(frame, text="Upload", width=50, command=savePic)
+    lbl_show_pic = tk.Label(frame, bg='#1F6AA5')
+    
+    setPreviewPic("./images/default.png")
+    
+    selectBtn.grid(row=0, column=0, padx=1, pady=5, ipady=0, sticky="e")
+    pathEntry.grid(row=0, column=1, padx=1, pady=5, ipady=0, sticky="e")
+    saveBtn.grid(row=0, column=2, padx=1, pady=5, ipady=0, sticky="e")
+    lbl_show_pic.grid(row=1, column=0, columnspan=3, pady=5, ipady=0, sticky="nswe")
+    
+open_btn = customtkinter.CTkButton(app, text="Open Add Image Window", command=open_add_image_window)
+open_btn.pack(expand=True)
 
-        conn = sqlite3.connect("users.db")
-        cursor = conn.cursor()
-        try:
-            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (reg_username, reg_password))
-            conn.commit()
-            messagebox.showinfo("Success", "User registered successfully!")
-            registration_window.destroy()
-        except sqlite3.IntegrityError:
-            messagebox.showerror("Error", "Username already exists")
-        finally:
-            conn.close()
-
-    registration_window = tk.Toplevel(root)
-    registration_window.title("Register")
-    registration_window.geometry("300x200")
-
-    tk.Label(registration_window, text="Username:").pack(pady=5)
-    reg_username_entry = tk.Entry(registration_window)
-    reg_username_entry.pack(pady=5)
-
-    tk.Label(registration_window, text="Password:").pack(pady=5)
-    reg_password_entry = tk.Entry(registration_window, show="*")
-    reg_password_entry.pack(pady=5)
-
-    tk.Button(registration_window, text="Register", command=register).pack(pady=10)
-
-# Function to open the homepage
-def open_homepage(username):
-    homepage = tk.Tk()
-    homepage.title("Homepage")
-    homepage.geometry("400x300")
-
-    tk.Label(homepage, text=f"Welcome, {username}!", font=("Arial", 16)).pack(pady=20)
-    tk.Label(homepage, text="This is your homepage.", font=("Arial", 12)).pack(pady=10)
-
-    tk.Button(homepage, text="Logout", command=lambda: [homepage.destroy(), main()]).pack(pady=20)
-
-    homepage.mainloop()
-
-# Main GUI
-def main():
-    global root, username_entry, password_entry
-
-    root = tk.Tk()
-    root.title("Login")
-    root.geometry("300x200")
-
-    tk.Label(root, text="Username:").pack(pady=5)
-    username_entry = tk.Entry(root)
-    username_entry.pack(pady=5)
-
-    tk.Label(root, text="Password:").pack(pady=5)
-    password_entry = tk.Entry(root, show="*")
-    password_entry.pack(pady=5)
-
-    tk.Button(root, text="Login", command=login).pack(pady=10)
-    tk.Button(root, text="Register", command=open_registration).pack(pady=5)
-
-    root.mainloop()
-
-# Initialize database and run the application
-setup_database()
-main()
+app.resizable(False, False)
+app.mainloop()

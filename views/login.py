@@ -50,13 +50,13 @@ class LoginApp(CTk):
 
         result = authenticate_user(username, password)
         if result:
-            fullname, role = result
+            user_id, role = result
             self.withdraw()
             if role == "ADMIN":
-                admin_panel = AdminWindow(fullname, self)
+                admin_panel = AdminWindow(user_id, self)
                 admin_panel.mainloop()
             else:
-                homepage = HomepageWindow(fullname, self)
+                homepage = HomepageWindow(user_id, self)
                 homepage.mainloop()
         else:
             messagebox.showerror("Error", "Invalid username or password!")

@@ -10,21 +10,15 @@ DB_FILENAME = "vswa_db.db"
 
 
 class AdminWindow(CTk):
-    """Admin homepage window for managing projects and construction items."""
-
-    def __init__(self, fullname, login_app):
+    def __init__(self, user_id, login_app):
         super().__init__()
         self.title("Homepage - Admin")
         self.login_app = login_app
+        self.current_user_id = user_id
         self.db_filename = DB_FILENAME
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-
-        self.current_user_id = self.fetch_user_id(fullname)
-        if self.current_user_id is None:
-            print("Error: Could not fetch user ID")
-
         self.setup_window()
-        self.create_widgets(fullname)
+        self.create_widgets(user_id)
 
     # ─── DATABASE HELPERS ────────────────────────────────────────────────
 
@@ -61,10 +55,10 @@ class AdminWindow(CTk):
 
     # ─── DATA FETCHING METHODS ───────────────────────────────────────────
 
-    def fetch_user_id(self, fullname):
-        """Fetch user ID from the database based on the fullname."""
-        query = "SELECT id FROM users WHERE fullname = ?"
-        result = self._run_query(query, (fullname,), fetchone=True)
+    def fetch_user_id(self, user_id):
+        """Fetch user ID from the database based on the user_id."""
+        query = "SELECT id FROM users WHERE user_id = ?"
+        result = self._run_query(query, (user_id,), fetchone=True)
         return result[0] if result else None
 
     def fetch_project_details(self, user_id):
@@ -132,7 +126,7 @@ class AdminWindow(CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=2)
 
-    def create_widgets(self, fullname):
+    def create_widgets(self, user_id):
         """Create and layout all UI widgets."""
         project_details = self.fetch_project_details(self.current_user_id)
         project_name = project_details.get("project_name", "N/A")

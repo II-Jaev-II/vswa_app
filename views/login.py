@@ -12,6 +12,7 @@ class LoginApp(CTk):
         self.title("Login")
         self.setup_window()
         self.create_widgets()
+        self.resizable(False, False)
 
     def setup_window(self):
         height = 430

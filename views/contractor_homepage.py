@@ -127,26 +127,54 @@ class HomepageWindow(CTk):
 
         self.add_image_window = tk.Toplevel()
         self.add_image_window.title(f"Add / Update Image - {construction_type} | {item_number} | {item_name}")
-        self.add_image_window.geometry("1400x600")
+        self.add_image_window.geometry("1600x800")
         self.add_image_window.resizable(False, False)
         self.add_image_window.configure(bg="#11151f")
         self.add_image_window.protocol("WM_DELETE_WINDOW", self.on_add_image_window_close)
 
         # Center the window on the screen
         self.add_image_window.update_idletasks()
-        width, height = 1200, 600
+        width, height = 1600, 800
         x = (self.add_image_window.winfo_screenwidth() // 2) - (width // 2)
         y = (self.add_image_window.winfo_screenheight() // 2) - (height // 2)
         self.add_image_window.geometry(f"{width}x{height}+{x}+{y}")
 
-        # Create frame for window content
-        self.frame = tk.Frame(self.add_image_window, bg="#11151f")
-        self.frame.pack(pady=10, padx=10, fill="both", expand=True)
+        # Create a container for the entire window content and make it scrollable
+        container = tk.Frame(self.add_image_window, bg="#11151f")
+        container.pack(fill="both", expand=True)
 
+        canvas = tk.Canvas(container, bg="#11151f", highlightthickness=0)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # This frame holds all of the window content
+        self.frame = tk.Frame(canvas, bg="#11151f")
+        window_id = canvas.create_window((0, 0), window=self.frame, anchor="nw")
+
+        # Update scroll region when the content changes
+        def on_frame_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        self.frame.bind("<Configure>", on_frame_configure)
+
+        # Ensure that the inner frame always matches the width of the canvas
+        def on_canvas_configure(event):
+            canvas.itemconfig(window_id, width=event.width)
+        canvas.bind("<Configure>", on_canvas_configure)
+
+        # Bind mouse wheel scrolling when the cursor is over the canvas
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        # ------------------ Static Content ------------------
         # Title Label
-        tk.Label(self.frame, text="Upload Construction Images", font=("Roboto", 14, "bold"), bg="#11151f", fg="white")\
-            .grid(row=0, column=0, columnspan=3, pady=10)
-        
+        tk.Label(self.frame, text="Upload Construction Images", font=("Roboto", 14, "bold"),
+                 bg="#11151f", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
+
         # Helper function to check if the image has GPS coordinates
         def has_gps_coordinates(filepath):
             try:
@@ -190,136 +218,284 @@ class HomepageWindow(CTk):
                 else:
                     messagebox.showwarning("Invalid Image", "Please upload a geotagged photo.")
 
-        # Define sections for Before, During, and After images
+        # Define initial static sections for Before, During, After, and Station Limits.
+        # Station Limits is a text field only.
         sections = [
             ("Before", tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
             ("During", tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
             ("After",  tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
+            ("Station Limits", None, CTkEntry(self.frame, width=200), None)
         ]
 
         for i, (title, img_label, path_entry, browse_btn) in enumerate(sections):
             self.frame.columnconfigure(i, weight=1)
-            tk.Label(self.frame, text=title, font=("Roboto", 12, "bold"), bg="#11151f", fg="white")\
-                .grid(row=1, column=i, pady=5, sticky="nswe")
-            img_label.grid(row=2, column=i, pady=5, sticky="nswe")
+            tk.Label(self.frame, text=title, font=("Roboto", 12, "bold"),
+                     bg="#11151f", fg="white").grid(row=1, column=i, pady=5, sticky="nswe")
+            if img_label is not None:
+                img_label.grid(row=2, column=i, pady=5, sticky="nswe")
             path_entry.grid(row=3, column=i, padx=5, pady=5)
-            browse_btn.grid(row=4, column=i, padx=5, pady=5)
-            browse_btn.configure(command=lambda lbl=img_label, ent=path_entry: select_pic(lbl, ent))
+            if browse_btn is not None:
+                browse_btn.grid(row=4, column=i, padx=5, pady=5)
+                browse_btn.configure(command=lambda lbl=img_label, ent=path_entry: select_pic(lbl, ent))
 
-        # If a record exists in the database, fetch and display the existing images.
+        # If a record exists in the database for the static row (row_index = 0), fetch and display it.
         try:
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT image_before, image_during, image_after 
+                CREATE TABLE IF NOT EXISTS completed_construction_images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    construction_type TEXT,
+                    item_number TEXT,
+                    item_name TEXT,
+                    row_index INTEGER,
+                    image_before TEXT,
+                    image_during TEXT,
+                    image_after TEXT,
+                    station_limits TEXT
+                )
+            """)
+            cursor.execute("""
+                SELECT image_before, image_during, image_after, station_limits 
                 FROM completed_construction_images 
-                WHERE construction_type=? AND item_number=? AND item_name=?
+                WHERE construction_type=? AND item_number=? AND item_name=? AND row_index=0
             """, (construction_type, item_number, item_name))
             row = cursor.fetchone()
             conn.close()
             if row:
-                # row[0]: Before, row[1]: During, row[2]: After
                 if row[0] and os.path.exists(row[0]):
                     set_preview_pic(row[0], sections[0][1], sections[0][2])
                 if row[1] and os.path.exists(row[1]):
                     set_preview_pic(row[1], sections[1][1], sections[1][2])
                 if row[2] and os.path.exists(row[2]):
                     set_preview_pic(row[2], sections[2][1], sections[2][2])
+                if row[3]:
+                    sections[3][2].delete(0, tk.END)
+                    sections[3][2].insert(0, row[3])
         except Exception as e:
             print(f"Error fetching existing images: {e}")
 
         # Horizontal separator
-        tk.Frame(self.frame, height=2, bg="gray").grid(row=5, column=0, columnspan=3, pady=10, sticky="ew")
+        tk.Frame(self.frame, height=2, bg="gray").grid(row=5, column=0, columnspan=4, pady=10, sticky="ew")
 
-        # Function to update (or insert) images for the construction item.
-        def update_uploaded_images(construction_type, item_number, item_name, before_path, during_path, after_path):
-            base_dir = "images"  # Base folder for images
-            phases = {"before": before_path, "during": during_path, "after": after_path}
-            new_saved_paths = {"before": None, "during": None, "after": None}
+        # ------------------ Dynamic Rows Section ------------------
+        dynamic_rows_container = tk.Frame(self.frame, bg="#11151f")
+        dynamic_rows_container.grid(row=6, column=0, columnspan=4, sticky="ew")
 
+        # List to keep track of dynamic row entries
+        self.dynamic_rows_entries = []
+
+        # Modified dynamic row function with optional prepopulated data.
+        def add_new_row(prepopulated_data=None):
+            row_frame = tk.Frame(dynamic_rows_container, bg="#11151f", bd=1, relief="solid")
+            row_frame.pack(fill="x", pady=5, padx=5)
+
+            row_entries = {}
+            for phase in ["Before", "During", "After", "Station Limits"]:
+                phase_frame = tk.Frame(row_frame, bg="#11151f")
+                phase_frame.pack(side="left", expand=True, padx=5, pady=5)
+                tk.Label(phase_frame, text=phase, font=("Roboto", 12, "bold"),
+                         bg="#11151f", fg="white").pack()
+                if phase in ["Before", "During", "After"]:
+                    preview_label = tk.Label(phase_frame, bg="#11151f")
+                    preview_label.pack(pady=5)
+                    path_entry = CTkEntry(phase_frame, width=200)
+                    path_entry.pack(pady=5)
+                    browse_btn = CTkButton(phase_frame, text="Browse", width=100,
+                                           command=lambda lbl=preview_label, ent=path_entry: select_pic(lbl, ent))
+                    browse_btn.pack(pady=5)
+                    # If prepopulated, set image preview and entry.
+                    if prepopulated_data and prepopulated_data.get(phase.lower(), ""):
+                        file_path = prepopulated_data.get(phase.lower())
+                        path_entry.insert(0, file_path)
+                        if os.path.exists(file_path):
+                            set_preview_pic(file_path, preview_label, path_entry)
+                    row_entries[phase] = path_entry
+                else:
+                    # For Station Limits, only an entry is needed.
+                    path_entry = CTkEntry(phase_frame, width=200)
+                    path_entry.pack(pady=5)
+                    if prepopulated_data and prepopulated_data.get("station_limits", ""):
+                        path_entry.insert(0, prepopulated_data.get("station_limits"))
+                    row_entries[phase] = path_entry
+
+            def remove_row():
+                row_frame.destroy()
+                if row_entries in self.dynamic_rows_entries:
+                    self.dynamic_rows_entries.remove(row_entries)
+            remove_btn = CTkButton(row_frame, text="Remove Row", width=100, command=remove_row)
+            remove_btn.pack(side="left", padx=5, pady=5)
+
+            self.dynamic_rows_entries.append(row_entries)
+
+        # Load dynamic rows from the database (row_index > 0)
+        try:
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
-            # Fetch current image paths for this item.
             cursor.execute("""
-                SELECT image_before, image_during, image_after 
+                SELECT image_before, image_during, image_after, station_limits 
+                FROM completed_construction_images 
+                WHERE construction_type=? AND item_number=? AND item_name=? AND row_index > 0
+            """, (construction_type, item_number, item_name))
+            dynamic_rows_data = cursor.fetchall()
+            conn.close()
+            for data in dynamic_rows_data:
+                prepopulated_data = {
+                    "before": data[0],
+                    "during": data[1],
+                    "after": data[2],
+                    "station_limits": data[3]
+                }
+                add_new_row(prepopulated_data=prepopulated_data)
+        except Exception as e:
+            print("Error loading dynamic rows:", e)
+
+        add_row_btn = CTkButton(self.frame, text="Add Row", width=150, command=add_new_row)
+        add_row_btn.grid(row=7, column=0, columnspan=4, pady=10)
+
+        # ------------------ Update Uploaded Data Function ------------------
+        def update_all_uploaded_images(construction_type, item_number, item_name, static_data, dynamic_rows):
+            import os, shutil, uuid
+            base_dir = os.path.join(os.getcwd(), "images")
+            conn = sqlite3.connect(self.db_filename)
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS completed_construction_images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    construction_type TEXT,
+                    item_number TEXT,
+                    item_name TEXT,
+                    row_index INTEGER,
+                    image_before TEXT,
+                    image_during TEXT,
+                    image_after TEXT,
+                    station_limits TEXT
+                )
+            """)
+            
+            def process_file(new_file, phase):
+                if new_file:
+                    target_dir = os.path.join(base_dir, phase.lower())
+                    abs_target_dir = os.path.abspath(target_dir)
+                    abs_new_file = os.path.abspath(new_file)
+                    if abs_new_file.startswith(abs_target_dir):
+                        return new_file
+                    if not os.path.exists(new_file):
+                        raise FileNotFoundError(f"Source file not found: {new_file}")
+                    os.makedirs(target_dir, exist_ok=True)
+                    original_filename = os.path.basename(new_file)
+                    unique_filename = f"{os.path.splitext(original_filename)[0]}_{uuid.uuid4().hex}{os.path.splitext(original_filename)[1]}"
+                    target_path = os.path.join(target_dir, unique_filename)
+                    shutil.copy(new_file, target_path)
+                    return target_path
+                return None
+
+            static_saved = {}
+            for phase in ["before", "during", "after"]:
+                file_path = static_data.get(phase, "")
+                static_saved[phase] = process_file(file_path, phase) if file_path else None
+            static_saved["station_limits"] = static_data.get("station_limits", "")
+
+            new_saved_paths = {}
+            new_saved_paths["0"] = static_saved
+            
+            row_index = 1
+            for row_entries in dynamic_rows:
+                row_saved = {}
+                for phase in ["Before", "During", "After", "Station Limits"]:
+                    file_path = row_entries[phase].get().strip()
+                    if phase in ["Before", "During", "After"]:
+                        phase_key = phase.lower()
+                        row_saved[phase_key] = process_file(file_path, phase_key) if file_path else None
+                    else:
+                        row_saved["station_limits"] = file_path if file_path else ""
+                new_saved_paths[str(row_index)] = row_saved
+                row_index += 1
+
+            cursor.execute("""
+                SELECT image_before, image_during, image_after, station_limits 
                 FROM completed_construction_images 
                 WHERE construction_type=? AND item_number=? AND item_name=?
             """, (construction_type, item_number, item_name))
-            row = cursor.fetchone()
-            current_paths = {"before": None, "during": None, "after": None}
-            if row:
-                current_paths["before"], current_paths["during"], current_paths["after"] = row
-
-            # Process each phase.
-            for phase, new_file in phases.items():
-                if new_file:
-                    # If the new file is the same as the current one, skip copying/deleting.
-                    if current_paths[phase] and os.path.abspath(new_file) == os.path.abspath(current_paths[phase]):
-                        new_saved_paths[phase] = current_paths[phase]
-                        continue
-
-                    # Check if the source file exists.
-                    if not os.path.exists(new_file):
-                        raise FileNotFoundError(f"Source file not found: {new_file}")
-                    target_dir = os.path.join(base_dir, phase)
-                    os.makedirs(target_dir, exist_ok=True)
-                    original_filename = os.path.basename(new_file)
-                    # Generate a unique file name to avoid collisions.
-                    unique_filename = f"{os.path.splitext(original_filename)[0]}_{uuid.uuid4().hex}{os.path.splitext(original_filename)[1]}"
-                    target_path = os.path.join(target_dir, unique_filename)
-                    
-                    # If an old image exists and is different from the new one, delete it.
-                    if current_paths[phase] and os.path.exists(current_paths[phase]):
-                        try:
-                            os.remove(current_paths[phase])
-                        except Exception as e:
-                            print(f"Error deleting file {current_paths[phase]}: {e}")
-                    # Copy the new image using the unique file name.
-                    shutil.copy(new_file, target_path)
-                    new_saved_paths[phase] = target_path
-                else:
-                    # Retain the current image if no new file is provided.
-                    new_saved_paths[phase] = current_paths[phase]
-
-            # If a record exists, update it; otherwise, insert a new one.
-            if row:
-                cursor.execute("""
-                    UPDATE completed_construction_images 
-                    SET image_before=?, image_during=?, image_after=?
-                    WHERE construction_type=? AND item_number=? AND item_name=?
-                """, (new_saved_paths["before"], new_saved_paths["during"], new_saved_paths["after"],
-                    construction_type, item_number, item_name))
-            else:
+            existing_rows = cursor.fetchall()
+            
+            new_files_set = set()
+            for row in new_saved_paths.values():
+                for key in ["before", "during", "after"]:
+                    path = row.get(key)
+                    if path:
+                        new_files_set.add(os.path.abspath(path))
+            
+            for row in existing_rows:
+                for file_path in row[:3]:
+                    if file_path and os.path.exists(file_path):
+                        if os.path.abspath(file_path) not in new_files_set:
+                            try:
+                                os.remove(file_path)
+                            except Exception as e:
+                                print(f"Error deleting file {file_path}: {e}")
+            
+            cursor.execute("""
+                DELETE FROM completed_construction_images 
+                WHERE construction_type=? AND item_number=? AND item_name=?
+            """, (construction_type, item_number, item_name))
+            
+            cursor.execute("""
+                INSERT INTO completed_construction_images 
+                (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (construction_type, item_number, item_name, 0,
+                  new_saved_paths["0"]["before"], new_saved_paths["0"]["during"], new_saved_paths["0"]["after"],
+                  new_saved_paths["0"]["station_limits"]))
+            
+            for i in range(1, row_index):
+                row_data = new_saved_paths[str(i)]
                 cursor.execute("""
                     INSERT INTO completed_construction_images 
-                    (construction_type, item_number, item_name, image_before, image_during, image_after)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (construction_type, item_number, item_name,
-                    new_saved_paths["before"], new_saved_paths["during"], new_saved_paths["after"]))
+                    (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (construction_type, item_number, item_name, i,
+                      row_data["before"], row_data["during"], row_data["after"], row_data["station_limits"]))
+            
             conn.commit()
             conn.close()
 
-        # Function called when Submit is clicked.
+        # ------------------ Upload Function ------------------
         def upload_images():
             before_path = sections[0][2].get().strip()
             during_path = sections[1][2].get().strip()
             after_path = sections[2][2].get().strip()
+            station_limits_val = sections[3][2].get().strip()
 
-            if not (before_path or during_path or after_path):
-                messagebox.showerror("Error", "Please select at least one image.")
+            static_provided = before_path or during_path or after_path or station_limits_val
+            dynamic_provided = any(
+                row["Before"].get().strip() or row["During"].get().strip() or row["After"].get().strip() or row["Station Limits"].get().strip()
+                for row in self.dynamic_rows_entries
+            )
+            if not (static_provided or dynamic_provided):
+                messagebox.showerror("Error", "Please select at least one image or provide station limits.")
                 return
 
             try:
-                update_uploaded_images(construction_type, item_number, item_name,
-                                       before_path, during_path, after_path)
-                messagebox.showinfo("Success", "Images updated successfully!")
+                static_data = {
+                    "before": before_path,
+                    "during": during_path,
+                    "after": after_path,
+                    "station_limits": station_limits_val
+                }
+                update_all_uploaded_images(
+                    construction_type, item_number, item_name,
+                    static_data=static_data,
+                    dynamic_rows=self.dynamic_rows_entries
+                )
+                messagebox.showinfo("Success", "Images and station limits updated successfully!")
                 self.on_add_image_window_close()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update images: {e}")
 
-        # Submit & Cancel Buttons
+        # ------------------ Submit & Cancel Buttons ------------------
         btn_frame = tk.Frame(self.frame, bg="#11151f")
-        btn_frame.grid(row=6, column=0, columnspan=3, pady=10)
+        btn_frame.grid(row=8, column=0, columnspan=4, pady=10)
 
         submit_btn = CTkButton(btn_frame, text="Submit", width=150, command=upload_images)
         submit_btn.pack(side="left", padx=20)

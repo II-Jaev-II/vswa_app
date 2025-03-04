@@ -1,11 +1,14 @@
 import sqlite3
 import tkinter as tk
 from tkinter import messagebox, filedialog
-from customtkinter import CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry
+from customtkinter import CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry, CTkCheckBox
 from PIL import ImageTk, Image, ExifTags
 import os
 import shutil
-import uuid  # To generate unique file names
+import uuid
+from docx import Document
+from docx.shared import Inches, Cm, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 DB_FILENAME = "vswa_db.db"
 
@@ -79,8 +82,9 @@ class HomepageWindow(CTk):
         self.table_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
-        headers = ["Construction Type", "Item Number", "Item Name", "Status", "Actions"]
-        col_widths = [200, 100, 500, 150, 130]
+        # Update headers to include a new "Report" column.
+        headers = ["Construction Type", "Item Number", "Item Name", "Status", "Actions", "Report"]
+        col_widths = [200, 100, 500, 150, 130, 150]
 
         header_frame = CTkFrame(self.scrollable_frame, fg_color="black")
         header_frame.grid(row=0, column=0, columnspan=len(headers), sticky="nsew", padx=1, pady=1)
@@ -101,23 +105,21 @@ class HomepageWindow(CTk):
             row_frame = CTkFrame(self.scrollable_frame, fg_color="black")
             row_frame.grid(row=row_index, column=0, columnspan=len(headers), sticky="nsew", padx=1, pady=1)
 
-            # Display the item details
-            for col_index, (value, col_width) in enumerate(zip(item[:-1], col_widths[:-1])):
+            # Use the first 4 columns from the query (Construction Type, Item Number, Item Name, Status)
+            for col_index, (value, col_width) in enumerate(zip(item[:4], col_widths[:4])):
                 cell_label = CTkLabel(row_frame, text=value, font=("Roboto", 12),
                                       width=col_width, height=30, fg_color=bg_color)
                 cell_label.grid(row=0, column=col_index, padx=1, pady=1, sticky="nsew")
 
-            construction_type, item_number, item_name = item[:3]
+            construction_type, item_number, item_name = item[0], item[1], item[2]
 
+            # Button for adding/updating images.
             add_image_button = CTkButton(
                 row_frame, text="Add / Update Image", font=("Roboto", 12),
                 command=lambda c=construction_type, i=item_number, n=item_name: self.open_add_image_window(c, i, n),
-                width=col_widths[-1], height=30
+                width=col_widths[4], height=30
             )
-            add_image_button.grid(row=0, column=len(headers) - 1, padx=1, pady=1, sticky="nsew")
-
-            for col_index in range(len(headers)):
-                row_frame.grid_columnconfigure(col_index, weight=1)
+            add_image_button.grid(row=0, column=4, padx=1, pady=1, sticky="nsew")
 
     def open_add_image_window(self, construction_type, item_number, item_name):
         # If an add image window is already open, bring it to the front.
@@ -171,11 +173,9 @@ class HomepageWindow(CTk):
         canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
         # ------------------ Static Content ------------------
-        # Title Label
         tk.Label(self.frame, text="Upload Construction Images", font=("Roboto", 14, "bold"),
                  bg="#11151f", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
 
-        # Helper function to check if the image has GPS coordinates
         def has_gps_coordinates(filepath):
             try:
                 img = Image.open(filepath)
@@ -192,7 +192,6 @@ class HomepageWindow(CTk):
                 print(f"Error reading EXIF data: {e}")
                 return False
 
-        # Helper function to set a preview image and update its file path entry
         def set_preview_pic(filepath, label, entry):
             try:
                 img = Image.open(filepath)
@@ -205,7 +204,6 @@ class HomepageWindow(CTk):
             except Exception as e:
                 print(f"Error setting preview picture: {e}")
 
-        # Helper function to let user select an image file
         def select_pic(label, entry):
             filename = filedialog.askopenfilename(
                 initialdir=os.getcwd(),
@@ -218,8 +216,7 @@ class HomepageWindow(CTk):
                 else:
                     messagebox.showwarning("Invalid Image", "Please upload a geotagged photo.")
 
-        # Define initial static sections for Before, During, After, and Station Limits.
-        # Station Limits is a text field only.
+        # Define static sections for Before, During, After, and Station Limits.
         sections = [
             ("Before", tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
             ("During", tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
@@ -238,7 +235,7 @@ class HomepageWindow(CTk):
                 browse_btn.grid(row=4, column=i, padx=5, pady=5)
                 browse_btn.configure(command=lambda lbl=img_label, ent=path_entry: select_pic(lbl, ent))
 
-        # If a record exists in the database for the static row (row_index = 0), fetch and display it.
+        # Load existing static data if available.
         try:
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
@@ -275,36 +272,37 @@ class HomepageWindow(CTk):
         except Exception as e:
             print(f"Error fetching existing images: {e}")
 
-        # Horizontal separator
+        # Dynamic rows for additional image entries.
         tk.Frame(self.frame, height=2, bg="gray").grid(row=5, column=0, columnspan=4, pady=10, sticky="ew")
-
-        # ------------------ Dynamic Rows Section ------------------
         dynamic_rows_container = tk.Frame(self.frame, bg="#11151f")
         dynamic_rows_container.grid(row=6, column=0, columnspan=4, sticky="ew")
-
-        # List to keep track of dynamic row entries
         self.dynamic_rows_entries = []
 
-        # Modified dynamic row function with optional prepopulated data.
         def add_new_row(prepopulated_data=None):
-            row_frame = tk.Frame(dynamic_rows_container, bg="#11151f", bd=1, relief="solid")
+            row_frame = tk.Frame(dynamic_rows_container, bg="#11151f", bd=1, relief="solid", highlightthickness=1, highlightbackground="gray")
             row_frame.pack(fill="x", pady=5, padx=5)
-
             row_entries = {}
+
+            # Add a checkbox to decide if this row should be included in the report.
+            include_var = tk.BooleanVar(value=True)  # default checked
+            include_checkbox = CTkCheckBox(row_frame, text="Include", variable=include_var)
+            include_checkbox.pack(side="left", padx=5, pady=5)
+            row_entries["include"] = include_var
+
+            # Create entries for each phase.
             for phase in ["Before", "During", "After", "Station Limits"]:
                 phase_frame = tk.Frame(row_frame, bg="#11151f")
                 phase_frame.pack(side="left", expand=True, padx=5, pady=5)
                 tk.Label(phase_frame, text=phase, font=("Roboto", 12, "bold"),
-                         bg="#11151f", fg="white").pack()
+                        bg="#11151f", fg="white").pack()
                 if phase in ["Before", "During", "After"]:
                     preview_label = tk.Label(phase_frame, bg="#11151f")
                     preview_label.pack(pady=5)
                     path_entry = CTkEntry(phase_frame, width=200)
                     path_entry.pack(pady=5)
                     browse_btn = CTkButton(phase_frame, text="Browse", width=100,
-                                           command=lambda lbl=preview_label, ent=path_entry: select_pic(lbl, ent))
+                                        command=lambda lbl=preview_label, ent=path_entry: select_pic(lbl, ent))
                     browse_btn.pack(pady=5)
-                    # If prepopulated, set image preview and entry.
                     if prepopulated_data and prepopulated_data.get(phase.lower(), ""):
                         file_path = prepopulated_data.get(phase.lower())
                         path_entry.insert(0, file_path)
@@ -312,13 +310,13 @@ class HomepageWindow(CTk):
                             set_preview_pic(file_path, preview_label, path_entry)
                     row_entries[phase] = path_entry
                 else:
-                    # For Station Limits, only an entry is needed.
                     path_entry = CTkEntry(phase_frame, width=200)
                     path_entry.pack(pady=5)
                     if prepopulated_data and prepopulated_data.get("station_limits", ""):
                         path_entry.insert(0, prepopulated_data.get("station_limits"))
                     row_entries[phase] = path_entry
 
+            # Button to remove this dynamic row.
             def remove_row():
                 row_frame.destroy()
                 if row_entries in self.dynamic_rows_entries:
@@ -328,7 +326,6 @@ class HomepageWindow(CTk):
 
             self.dynamic_rows_entries.append(row_entries)
 
-        # Load dynamic rows from the database (row_index > 0)
         try:
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
@@ -353,9 +350,7 @@ class HomepageWindow(CTk):
         add_row_btn = CTkButton(self.frame, text="Add Row", width=150, command=add_new_row)
         add_row_btn.grid(row=7, column=0, columnspan=4, pady=10)
 
-        # ------------------ Update Uploaded Data Function ------------------
         def update_all_uploaded_images(construction_type, item_number, item_name, static_data, dynamic_rows):
-            import os, shutil, uuid
             base_dir = os.path.join(os.getcwd(), "images")
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
@@ -400,7 +395,7 @@ class HomepageWindow(CTk):
             new_saved_paths["0"] = static_saved
             
             row_index = 1
-            for row_entries in dynamic_rows:
+            for row_entries in self.dynamic_rows_entries:
                 row_saved = {}
                 for phase in ["Before", "During", "After", "Station Limits"]:
                     file_path = row_entries[phase].get().strip()
@@ -460,7 +455,6 @@ class HomepageWindow(CTk):
             conn.commit()
             conn.close()
 
-        # ------------------ Upload Function ------------------
         def upload_images():
             before_path = sections[0][2].get().strip()
             during_path = sections[1][2].get().strip()
@@ -493,7 +487,6 @@ class HomepageWindow(CTk):
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update images: {e}")
 
-        # ------------------ Submit & Cancel Buttons ------------------
         btn_frame = tk.Frame(self.frame, bg="#11151f")
         btn_frame.grid(row=8, column=0, columnspan=4, pady=10)
 
@@ -502,6 +495,9 @@ class HomepageWindow(CTk):
 
         cancel_btn = CTkButton(btn_frame, text="Cancel", width=150, command=self.on_add_image_window_close)
         cancel_btn.pack(side="left", padx=20)
+        
+        generate_report_btn = CTkButton(btn_frame, text="Generate Report", width=150, command=lambda: self.generate_report(construction_type, item_number, item_name))
+        generate_report_btn.pack(side="left", padx=20)
 
     def on_add_image_window_close(self):
         if self.add_image_window is not None:
@@ -542,6 +538,170 @@ class HomepageWindow(CTk):
         finally:
             if conn:
                 conn.close()
+
+    def generate_report(self, construction_type, item_number, item_name):
+        """
+        Generate a Word document report for the given construction item.
+        This function fetches the static images (row_index=0) from the database,
+        then iterates over dynamic rows in the open_add_image_window (if any are checked)
+        to include their data in the report.
+        """
+        try:
+            conn = sqlite3.connect(self.db_filename)
+            cursor = conn.cursor()
+            
+            # Fetch static image data from completed_construction_images table
+            cursor.execute("""
+                SELECT image_before, image_during, image_after, station_limits
+                FROM completed_construction_images
+                WHERE construction_type=? AND item_number=? AND item_name=? AND row_index=0
+            """, (construction_type, item_number, item_name))
+            row = cursor.fetchone()
+            if not row:
+                messagebox.showerror("Error", "No static image record found for this item.")
+                return
+            (before_img, during_img, after_img, station_limits) = row
+            
+            # Fetch project information from project_informations table (assumed to have only one record)
+            cursor.execute("""
+                SELECT project_id, project_name, location, contractor_name
+                FROM project_informations
+            """)
+            project_row = cursor.fetchone()
+            if project_row:
+                (project_id, project_name, location, contractor_name) = project_row
+            else:
+                messagebox.showerror("Error", "No project information found.")
+                return
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to fetch image data: {e}")
+            return
+        finally:
+            conn.close()
+
+        # Create a new Word document and set margins to 1.27 cm on all sides.
+        document = Document()
+        # Apply default paragraph formatting to remove space after each paragraph.
+        document.styles['Normal'].paragraph_format.space_after = Pt(0)
+        
+        for section in document.sections:
+            section.top_margin = Cm(1.27)
+            section.bottom_margin = Cm(1.27)
+            section.left_margin = Cm(1.27)
+            section.right_margin = Cm(1.27)
+
+        # --- Add header text to the document header ---
+        section = document.sections[0]
+        header = section.header
+        header_paragraph = header.add_paragraph()
+        header_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Add first line
+        header_paragraph.add_run("Republic of the Philippines")
+        header_paragraph.add_run("\n")
+        # Add second line in bold
+        bold_run = header_paragraph.add_run("PHILIPPINE RURAL DEVELOPMENT PROJECT")
+        bold_run.bold = True
+        header_paragraph.add_run("\n")
+        # Add third line
+        header_paragraph.add_run("Province of Pangasinan, Region I")
+        header_paragraph.add_run("\n")
+        # Add fourth line
+        bold_run = header_paragraph.add_run("MUNICIPALITY OF BAYAMBANG")
+        bold_run.bold = True
+        # -------------------------------------------------
+
+        # Insert 2 blank paragraphs between header and project information.
+        document.add_paragraph()
+        document.add_paragraph()
+
+        # Add project information
+        p = document.add_paragraph()
+        p.add_run("NAME OF PROJECT: ")
+        p.add_run(project_name).bold = True
+
+        p = document.add_paragraph()
+        p.add_run("LOCATION: ")
+        p.add_run(location).bold = True
+
+        p = document.add_paragraph()
+        p.add_run("PROJECT ID: ")
+        p.add_run(str(project_id)).bold = True
+
+        p = document.add_paragraph()
+        p.add_run("CONTRACTOR: ")
+        p.add_run(contractor_name).bold = True
+        
+        document.add_paragraph()
+        
+        p = document.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.add_run(f'ITEM {str(item_number).upper()} {item_name.upper()}').bold = True
+
+        if station_limits:
+            p_station = document.add_paragraph(f'STATION LIMIT: {station_limits}')
+            p_station.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            
+        document.add_paragraph()            
+
+        # Process static images for each phase
+        for phase, img_path in zip(["BEFORE", "DURING", "AFTER"], [before_img, during_img, after_img]):
+            # Add and center the paragraph.
+            heading = document.add_paragraph(phase)
+            heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            if img_path and os.path.exists(img_path):
+                try:
+                    document.add_picture(img_path, width=Inches(4), height=Inches(2))
+                    # Center the paragraph containing the picture.
+                    last_paragraph = document.paragraphs[-1]
+                    last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                except Exception as e:
+                    error_paragraph = document.add_paragraph("Error adding image.")
+                    error_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            else:
+                no_image_paragraph = document.add_paragraph("No image available.")
+                no_image_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Include dynamic rows that are checked.
+        if hasattr(self, 'dynamic_rows_entries'):
+            for idx, row_entries in enumerate(self.dynamic_rows_entries, start=1):
+                if "include" in row_entries and row_entries["include"].get():
+                    # Insert a page break so that each dynamic row starts on a new page.
+                    document.add_page_break()
+                    
+                    # Add station limits if provided.
+                    station_limits_text = row_entries["Station Limits"].get().strip()
+                    if station_limits_text:
+                        document.add_paragraph("STATION LIMIT: ")
+                        document.add_paragraph(station_limits_text)
+                    # For each phase in the dynamic row, add image or text.
+                    for phase in ["Before", "During", "After"]:
+                        document.add_heading(phase, level=2)
+                        file_path = row_entries[phase].get().strip()
+                        if file_path and os.path.exists(file_path):
+                            try:
+                                document.add_picture(file_path, width=Inches(4))
+                                # Center the picture
+                                last_paragraph = document.paragraphs[-1]
+                                last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            except Exception as e:
+                                document.add_paragraph("Error adding image.")
+                        else:
+                            document.add_paragraph("No image available.")
+
+        # Prompt user to save the report
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".docx",
+            filetypes=[("Word Documents", "*.docx")],
+            title="Save Report As"
+        )
+        if file_path:
+            try:
+                document.save(file_path)
+                messagebox.showinfo("Success", f"Report saved as {file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save document: {e}")
 
     def on_close(self):
         self.logout()

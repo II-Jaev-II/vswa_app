@@ -9,8 +9,22 @@ import uuid
 from docx import Document
 from docx.shared import Inches, Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 DB_FILENAME = "vswa_db.db"
+
+def set_cell_width(cell, width_dxa):
+        """
+        Set the width of a cell.
+        width_dxa: width in dxa units (1 inch = 1440 dxa)
+        """
+        tcPr = cell._tc.get_or_add_tcPr()
+        tcW = OxmlElement('w:tcW')
+        tcW.set(qn('w:w'), str(width_dxa))
+        tcW.set(qn('w:type'), 'dxa')
+        tcPr.append(tcW)
 
 class HomepageWindow(CTk):
     def __init__(self, user_id, login_app):
@@ -289,7 +303,7 @@ class HomepageWindow(CTk):
             include_checkbox.pack(side="left", padx=5, pady=5)
             row_entries["include"] = include_var
 
-            # Create entries for each phase.
+            # Create entries for each phase with lowercase keys.
             for phase in ["Before", "During", "After", "Station Limits"]:
                 phase_frame = tk.Frame(row_frame, bg="#11151f")
                 phase_frame.pack(side="left", expand=True, padx=5, pady=5)
@@ -308,13 +322,13 @@ class HomepageWindow(CTk):
                         path_entry.insert(0, file_path)
                         if os.path.exists(file_path):
                             set_preview_pic(file_path, preview_label, path_entry)
-                    row_entries[phase] = path_entry
+                    row_entries[phase.lower()] = path_entry
                 else:
                     path_entry = CTkEntry(phase_frame, width=200)
                     path_entry.pack(pady=5)
                     if prepopulated_data and prepopulated_data.get("station_limits", ""):
                         path_entry.insert(0, prepopulated_data.get("station_limits"))
-                    row_entries[phase] = path_entry
+                    row_entries["station_limits"] = path_entry
 
             # Button to remove this dynamic row.
             def remove_row():
@@ -397,13 +411,11 @@ class HomepageWindow(CTk):
             row_index = 1
             for row_entries in self.dynamic_rows_entries:
                 row_saved = {}
-                for phase in ["Before", "During", "After", "Station Limits"]:
+                for phase in ["before", "during", "after"]:
                     file_path = row_entries[phase].get().strip()
-                    if phase in ["Before", "During", "After"]:
-                        phase_key = phase.lower()
-                        row_saved[phase_key] = process_file(file_path, phase_key) if file_path else None
-                    else:
-                        row_saved["station_limits"] = file_path if file_path else ""
+                    row_saved[phase] = process_file(file_path, phase) if file_path else None
+                file_path = row_entries["station_limits"].get().strip()
+                row_saved["station_limits"] = file_path if file_path else ""
                 new_saved_paths[str(row_index)] = row_saved
                 row_index += 1
 
@@ -463,7 +475,7 @@ class HomepageWindow(CTk):
 
             static_provided = before_path or during_path or after_path or station_limits_val
             dynamic_provided = any(
-                row["Before"].get().strip() or row["During"].get().strip() or row["After"].get().strip() or row["Station Limits"].get().strip()
+                row["before"].get().strip() or row["during"].get().strip() or row["after"].get().strip() or row["station_limits"].get().strip()
                 for row in self.dynamic_rows_entries
             )
             if not (static_provided or dynamic_provided):
@@ -581,7 +593,6 @@ class HomepageWindow(CTk):
 
         # Create a new Word document and set margins to 1.27 cm on all sides.
         document = Document()
-        # Apply default paragraph formatting to remove space after each paragraph.
         document.styles['Normal'].paragraph_format.space_after = Pt(0)
         
         for section in document.sections:
@@ -590,25 +601,63 @@ class HomepageWindow(CTk):
             section.left_margin = Cm(1.27)
             section.right_margin = Cm(1.27)
 
-        # --- Add header text to the document header ---
+        # --- Add header with logos and centered text ---
         section = document.sections[0]
         header = section.header
-        header_paragraph = header.add_paragraph()
-        header_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Add first line
-        header_paragraph.add_run("Republic of the Philippines")
-        header_paragraph.add_run("\n")
-        # Add second line in bold
-        bold_run = header_paragraph.add_run("PHILIPPINE RURAL DEVELOPMENT PROJECT")
-        bold_run.bold = True
-        header_paragraph.add_run("\n")
-        # Add third line
-        header_paragraph.add_run("Province of Pangasinan, Region I")
-        header_paragraph.add_run("\n")
-        # Add fourth line
-        bold_run = header_paragraph.add_run("MUNICIPALITY OF BAYAMBANG")
-        bold_run.bold = True
+        # Calculate available width from page width minus left and right margins.
+        available_width = section.page_width - section.left_margin - section.right_margin
+
+        # Create the header table
+        header_table = header.add_table(rows=1, cols=3, width=available_width)
+        header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Get the cells
+        left_cell = header_table.cell(0, 0)
+        center_cell = header_table.cell(0, 1)
+        right_cell = header_table.cell(0, 2)
+
+        # Now set the widths
+        set_cell_width(left_cell, 2000)
+        set_cell_width(center_cell, 8000)
+        set_cell_width(right_cell, 2000)
+        
+        # Define file paths for logos (update these paths as needed)
+        left_logo_path = "images/prdp_logo.png"
+        right_logo_path = "images/prdp_logo.png"
+        
+        # Left cell: add left logo (aligned to left)
+        left_cell = header_table.cell(0, 0)
+        p_left = left_cell.paragraphs[0]
+        p_left.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        if os.path.exists(left_logo_path):
+            p_left.add_run().add_picture(left_logo_path, width=Inches(1))
+        else:
+            p_left.add_run("Left Logo")
+        
+        # Center cell: add header text (centered)
+        center_cell = header_table.cell(0, 1)
+        p_center = center_cell.paragraphs[0]
+        p_center.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_center.add_run("Republic of the Philippines\n")
+        run = p_center.add_run("PHILIPPINE RURAL DEVELOPMENT PROJECT\n")
+        run.bold = True
+        p_center.add_run("(Input Province Name)\n")
+        run = p_center.add_run("(Input Municipality Name)")
+        run.bold = True
+        
+        # Right cell: insert a box with text "Insert Municipality Logo"
+        right_cell = header_table.cell(0, 2)
+        # Clear any existing content
+        right_cell.text = ""
+        # Add a nested table in the right cell with one cell to serve as the box
+        nested_table = right_cell.add_table(rows=1, cols=1)
+        # Apply a table style that shows borders
+        nested_table.style = 'Table Grid'
+        nested_cell = nested_table.cell(0, 0)
+        p_box = nested_cell.paragraphs[0]
+        p_box.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_box.add_run("Insert Municipality Logo")
         # -------------------------------------------------
 
         # Insert 2 blank paragraphs between header and project information.
@@ -646,14 +695,12 @@ class HomepageWindow(CTk):
 
         # Process static images for each phase
         for phase, img_path in zip(["BEFORE", "DURING", "AFTER"], [before_img, during_img, after_img]):
-            # Add and center the paragraph.
             heading = document.add_paragraph(phase)
             heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
             if img_path and os.path.exists(img_path):
                 try:
                     document.add_picture(img_path, width=Inches(4), height=Inches(2))
-                    # Center the paragraph containing the picture.
                     last_paragraph = document.paragraphs[-1]
                     last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 except Exception as e:
@@ -667,30 +714,56 @@ class HomepageWindow(CTk):
         if hasattr(self, 'dynamic_rows_entries'):
             for idx, row_entries in enumerate(self.dynamic_rows_entries, start=1):
                 if "include" in row_entries and row_entries["include"].get():
-                    # Insert a page break so that each dynamic row starts on a new page.
                     document.add_page_break()
-                    
-                    # Add station limits if provided.
-                    station_limits_text = row_entries["Station Limits"].get().strip()
-                    if station_limits_text:
-                        document.add_paragraph("STATION LIMIT: ")
-                        document.add_paragraph(station_limits_text)
-                    # For each phase in the dynamic row, add image or text.
-                    for phase in ["Before", "During", "After"]:
-                        document.add_heading(phase, level=2)
-                        file_path = row_entries[phase].get().strip()
-                        if file_path and os.path.exists(file_path):
-                            try:
-                                document.add_picture(file_path, width=Inches(4))
-                                # Center the picture
-                                last_paragraph = document.paragraphs[-1]
-                                last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            except Exception as e:
-                                document.add_paragraph("Error adding image.")
-                        else:
-                            document.add_paragraph("No image available.")
+                    document.add_paragraph()
+                    document.add_paragraph()
 
-        # Prompt user to save the report
+                    p = document.add_paragraph()
+                    p.add_run("NAME OF PROJECT: ")
+                    p.add_run(project_name).bold = True
+
+                    p = document.add_paragraph()
+                    p.add_run("LOCATION: ")
+                    p.add_run(location).bold = True
+
+                    p = document.add_paragraph()
+                    p.add_run("PROJECT ID: ")
+                    p.add_run(str(project_id)).bold = True
+
+                    p = document.add_paragraph()
+                    p.add_run("CONTRACTOR: ")
+                    p.add_run(contractor_name).bold = True
+                    
+                    document.add_paragraph()
+
+                    p = document.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p.add_run(f'ITEM {str(item_number).upper()} {item_name.upper()}').bold = True
+
+                    station_limits_text = row_entries["station_limits"].get().strip()
+                    if station_limits_text:
+                        p_station = document.add_paragraph(f'STATION LIMIT: {station_limits_text}')
+                        p_station.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+                    # Process dynamic rows using lowercase keys.
+                    for phase in ["before", "during", "after"]:
+                        p_phase = document.add_paragraph(phase.upper())
+                        p_phase.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                        if phase in row_entries:
+                            file_path = row_entries[phase].get().strip()
+                            if file_path and os.path.exists(file_path):
+                                try:
+                                    document.add_picture(file_path, width=Inches(4), height=Inches(2))
+                                    last_paragraph = document.paragraphs[-1]
+                                    last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                except Exception as e:
+                                    document.add_paragraph("Error adding image.")
+                            else:
+                                document.add_paragraph("No image available.")
+                        else:
+                            document.add_paragraph(f"No image entry for {phase} phase.")
+
         file_path = filedialog.asksaveasfilename(
             defaultextension=".docx",
             filetypes=[("Word Documents", "*.docx")],

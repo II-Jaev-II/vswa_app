@@ -335,7 +335,7 @@ class HomepageWindow(CTk):
                 row_frame.destroy()
                 if row_entries in self.dynamic_rows_entries:
                     self.dynamic_rows_entries.remove(row_entries)
-            remove_btn = CTkButton(row_frame, text="Remove Row", width=100, command=remove_row)
+            remove_btn = CTkButton(row_frame, text="X", width=30, command=remove_row, fg_color="red", hover_color="darkred")
             remove_btn.pack(side="left", padx=5, pady=5)
 
             self.dynamic_rows_entries.append(row_entries)
@@ -624,7 +624,6 @@ class HomepageWindow(CTk):
         
         # Define file paths for logos (update these paths as needed)
         left_logo_path = "images/prdp_logo.png"
-        right_logo_path = "images/prdp_logo.png"
         
         # Left cell: add left logo (aligned to left)
         left_cell = header_table.cell(0, 0)

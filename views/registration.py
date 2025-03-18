@@ -3,6 +3,16 @@ import bcrypt
 from customtkinter import *
 from PIL import Image
 from tkinter import messagebox
+import os
+import sys
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for PyInstaller and development"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class RegistrationWindow(CTkToplevel):
     def __init__(self, master=None):
@@ -26,7 +36,7 @@ class RegistrationWindow(CTkToplevel):
 
     def create_widgets(self):
         # Load and display the image
-        image_path = "images/prdp_logo.png"
+        image_path = resource_path("images/prdp_logo.png")
         image = CTkImage(dark_image=Image.open(image_path), size=(150, 150))
         image_label = CTkLabel(master=self, image=image, text="")
         image_label.place(relx=0.5, rely=0.3, anchor="center")
@@ -64,7 +74,7 @@ class RegistrationWindow(CTkToplevel):
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())  # Secure password storage
 
         try:
-            conn = sqlite3.connect("vswa_db.db")
+            conn = sqlite3.connect(resource_path("database/vswa_db.db"))
             cursor = conn.cursor()
             cursor.execute(""" 
                 CREATE TABLE IF NOT EXISTS users (

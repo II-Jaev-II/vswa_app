@@ -5,6 +5,16 @@ from views.registration import RegistrationWindow
 from views.contractor_homepage import HomepageWindow
 from views.admin import AdminWindow
 from models.database import authenticate_user
+import sys
+import os
+
+# Add this helper method inside your LoginApp class or at the top of login.py
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class LoginApp(CTk):
     def __init__(self):
@@ -24,7 +34,7 @@ class LoginApp(CTk):
         self.geometry(f"{width}x{height}+{x}+{y}")
 
     def create_widgets(self):
-        image_path = "images/prdp_logo.png"
+        image_path = resource_path("images/prdp_logo.png")
         image = CTkImage(dark_image=Image.open(image_path), size=(150, 150))
         image_label = CTkLabel(master=self, image=image, text="")
         image_label.place(relx=0.5, rely=0.3, anchor="center")

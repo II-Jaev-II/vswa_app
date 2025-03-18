@@ -6,6 +6,7 @@ from PIL import ImageTk, Image, ExifTags
 import os
 import shutil
 import uuid
+import sys
 from docx import Document
 from docx.shared import Inches, Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -13,7 +14,15 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-DB_FILENAME = "vswa_db.db"
+def resource_path(relative_path):
+    """Get absolute path to resource, works for PyInstaller and development"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+DB_FILENAME = (resource_path("database/vswa_db.db"))
 
 def set_cell_width(cell, width_dxa):
         """
@@ -97,7 +106,7 @@ class HomepageWindow(CTk):
         self.scrollbar.pack(side="right", fill="y")
 
         # Update headers to include a new "Report" column.
-        headers = ["Construction Type", "Item Number", "Item Name", "Status", "Actions", "Report"]
+        headers = ["Construction Type", "Item Number", "Item Name", "Actions"]
         col_widths = [200, 100, 500, 150, 130, 150]
 
         header_frame = CTkFrame(self.scrollable_frame, fg_color="black")
@@ -133,7 +142,7 @@ class HomepageWindow(CTk):
                 command=lambda c=construction_type, i=item_number, n=item_name: self.open_add_image_window(c, i, n),
                 width=col_widths[4], height=30
             )
-            add_image_button.grid(row=0, column=4, padx=1, pady=1, sticky="nsew")
+            add_image_button.grid(row=0, column=3, padx=1, pady=1, sticky="nsew")
 
     def open_add_image_window(self, construction_type, item_number, item_name):
         # If an add image window is already open, bring it to the front.
@@ -235,7 +244,7 @@ class HomepageWindow(CTk):
             ("Before", tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
             ("During", tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
             ("After",  tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
-            ("Station Limits", None, CTkEntry(self.frame, width=200), None)
+            ("Station Limit/Grid", None, CTkEntry(self.frame, width=200), None)
         ]
 
         for i, (title, img_label, path_entry, browse_btn) in enumerate(sections):
@@ -623,7 +632,7 @@ class HomepageWindow(CTk):
         set_cell_width(right_cell, 2000)
         
         # Define file paths for logos (update these paths as needed)
-        left_logo_path = "images/prdp_logo.png"
+        left_logo_path = (resource_path("images/prdp_logo.png"))
         
         # Left cell: add left logo (aligned to left)
         left_cell = header_table.cell(0, 0)

@@ -5,8 +5,18 @@ from customtkinter import (
     CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry,
     CTkComboBox, CTkToplevel, CTkCheckBox
 )
+import sys
+import os
 
-DB_FILENAME = "vswa_db.db"
+def resource_path(relative_path):
+    """Get absolute path to resource, works for PyInstaller and development"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+DB_FILENAME = (resource_path("database/vswa_db.db"))
 
 class AdminWindow(CTk):
     def __init__(self, user_id, login_app):
@@ -291,13 +301,6 @@ class AdminWindow(CTk):
                 checkbox.pack(anchor="w", padx=10, pady=2)
                 self.item_checkboxes[item_id] = var
                 self.item_data_map[item_id] = {"item_number": item_number, "name": item_name}
-
-            self.submit_button = CTkButton(
-                self.items_frame,
-                text="Submit",
-                command=self.save_selected_items
-            )
-            self.submit_button.pack(pady=10)
         else:
             self.no_items_label = CTkLabel(
                 self.items_frame,
@@ -306,7 +309,21 @@ class AdminWindow(CTk):
             )
             self.no_items_label.pack(pady=10)
 
+        # Add a textbox for "Others" so the user can enter a custom item
+        self.others_label = CTkLabel(self.items_frame, text="Others (custom item):", font=("Roboto", 12))
+        self.others_label.pack(anchor="w", padx=10, pady=(10,2))
+        self.other_item_entry = CTkEntry(self.items_frame, placeholder_text="Enter custom item", font=("Roboto", 12))
+        self.other_item_entry.pack(anchor="w", padx=10, pady=(0,10))
+
+        self.submit_button = CTkButton(
+            self.items_frame,
+            text="Submit",
+            command=self.save_selected_items
+        )
+        self.submit_button.pack(pady=10)
+
     def save_selected_items(self):
+        # Collect items from checkboxes
         selected_items = [
             (
                 self.current_user_id,
@@ -317,6 +334,12 @@ class AdminWindow(CTk):
             )
             for item_id, var in self.item_checkboxes.items() if var.get()
         ]
+
+        # Check if a custom "Others" item was provided.
+        other_item_text = self.other_item_entry.get().strip()
+        if other_item_text:
+            # Insert a custom item record with a dummy item_id (-1) and "N/A" as item_number.
+            selected_items.append((self.current_user_id, self.construction_type_id, -1, "N/A", other_item_text))
 
         if not selected_items:
             messagebox.showwarning("No Selection", "No items selected.")

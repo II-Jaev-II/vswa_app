@@ -1,9 +1,20 @@
 import sqlite3
 import bcrypt
+import sys
+import os
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for PyInstaller and development"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 def authenticate_user(username, password):
     try:
-        conn = sqlite3.connect("vswa_db.db")
+        # Use resource_path here to ensure correct path in PyInstaller bundle
+        conn = sqlite3.connect(resource_path("database/vswa_db.db"))
         cursor = conn.cursor()
         cursor.execute("SELECT id, password, role FROM users WHERE username = ?", (username,))
         user = cursor.fetchone()

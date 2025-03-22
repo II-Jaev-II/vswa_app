@@ -8,7 +8,6 @@ from models.database import authenticate_user
 import sys
 import os
 
-# Add this helper method inside your LoginApp class or at the top of login.py
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
@@ -22,6 +21,7 @@ class LoginApp(CTk):
         self.title("Login")
         self.setup_window()
         self.create_widgets()
+        self.bind("<Return>", lambda event: self.login())
         self.resizable(False, False)
 
     def setup_window(self):

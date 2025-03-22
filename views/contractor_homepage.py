@@ -1,7 +1,7 @@
 import sqlite3
 import tkinter as tk
 from tkinter import messagebox, filedialog
-from customtkinter import CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry, CTkCheckBox
+from customtkinter import CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry, CTkCheckBox, CTkScrollableFrame
 from PIL import ImageTk, Image, ExifTags
 import os
 import shutil
@@ -157,48 +157,27 @@ class HomepageWindow(CTk):
         self.add_image_window.configure(bg="#11151f")
         self.add_image_window.protocol("WM_DELETE_WINDOW", self.on_add_image_window_close)
 
-        # Center the window on the screen
+        # Center the window on the screen.
         self.add_image_window.update_idletasks()
         width, height = 1600, 800
         x = (self.add_image_window.winfo_screenwidth() // 2) - (width // 2)
         y = (self.add_image_window.winfo_screenheight() // 2) - (height // 2)
         self.add_image_window.geometry(f"{width}x{height}+{x}+{y}")
 
-        # Create a container for the entire window content and make it scrollable
-        container = tk.Frame(self.add_image_window, bg="#11151f")
-        container.pack(fill="both", expand=True)
+        # Use a modern scrollable container from CustomTkinter.
+        scrollable_frame = CTkScrollableFrame(self.add_image_window, corner_radius=10, fg_color="#1C1C1C")
+        scrollable_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        canvas = tk.Canvas(container, bg="#11151f", highlightthickness=0)
-        canvas.pack(side="left", fill="both", expand=True)
+        # Header
+        CTkLabel(
+            scrollable_frame,
+            text="Upload Construction Images",
+            font=("Roboto", 20, "bold"),
+            text_color="white"
+        ).pack(pady=20)
 
-        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        scrollbar.pack(side="right", fill="y")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        # This frame holds all of the window content
-        self.frame = tk.Frame(canvas, bg="#11151f")
-        window_id = canvas.create_window((0, 0), window=self.frame, anchor="nw")
-
-        # Update scroll region when the content changes
-        def on_frame_configure(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-        self.frame.bind("<Configure>", on_frame_configure)
-
-        # Ensure that the inner frame always matches the width of the canvas
-        def on_canvas_configure(event):
-            canvas.itemconfig(window_id, width=event.width)
-        canvas.bind("<Configure>", on_canvas_configure)
-
-        # Bind mouse wheel scrolling when the cursor is over the canvas
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
-        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
-
-        # ------------------ Static Content ------------------
-        tk.Label(self.frame, text="Upload Construction Images", font=("Roboto", 14, "bold"),
-                 bg="#11151f", fg="white").grid(row=0, column=0, columnspan=4, pady=10)
-
+        # --------------------------------------------------
+        # Helper functions (same as before)
         def has_gps_coordinates(filepath):
             try:
                 img = Image.open(filepath)
@@ -231,7 +210,7 @@ class HomepageWindow(CTk):
             filename = filedialog.askopenfilename(
                 initialdir=os.getcwd(),
                 title="Select Image",
-                filetypes=[("Image files", "*.png *.jpg *.jpeg *.jfif")],
+                filetypes=[("Image files", "*.png *.jpg *.jpeg *.jfif")]
             )
             if filename:
                 if has_gps_coordinates(filename):
@@ -239,24 +218,45 @@ class HomepageWindow(CTk):
                 else:
                     messagebox.showwarning("Invalid Image", "Please upload a geotagged photo.")
 
-        # Define static sections for Before, During, After, and Station Limits.
+        # --------------------------------------------------
+        # Static Sections (Before, During, After, Station Limits)
+        static_container = CTkFrame(scrollable_frame, corner_radius=10, fg_color="#2B2B2B")
+        static_container.pack(pady=10, fill="x", padx=10)
+
+        # Dictionary to hold references for later use.
+        self.static_section_widgets = {}
+
         sections = [
-            ("Before", tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
-            ("During", tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
-            ("After",  tk.Label(self.frame, bg="#11151f"), CTkEntry(self.frame, width=200), CTkButton(self.frame, text="Browse", width=100)),
-            ("Station Limit/Grid", None, CTkEntry(self.frame, width=200), None)
+            {"title": "Before", "key": "before"},
+            {"title": "During", "key": "during"},
+            {"title": "After", "key": "after"},
+            {"title": "Station Limit/Grid", "key": "station_limits"}
         ]
 
-        for i, (title, img_label, path_entry, browse_btn) in enumerate(sections):
-            self.frame.columnconfigure(i, weight=1)
-            tk.Label(self.frame, text=title, font=("Roboto", 12, "bold"),
-                     bg="#11151f", fg="white").grid(row=1, column=i, pady=5, sticky="nswe")
-            if img_label is not None:
-                img_label.grid(row=2, column=i, pady=5, sticky="nswe")
-            path_entry.grid(row=3, column=i, padx=5, pady=5)
-            if browse_btn is not None:
-                browse_btn.grid(row=4, column=i, padx=5, pady=5)
-                browse_btn.configure(command=lambda lbl=img_label, ent=path_entry: select_pic(lbl, ent))
+        for sec in sections:
+            card = CTkFrame(static_container, corner_radius=10, fg_color="#3B3B3B")
+            card.pack(side="left", expand=True, fill="both", padx=10, pady=10)
+
+            CTkLabel(card, text=sec["title"], font=("Roboto", 16, "bold"), text_color="white").pack(pady=(10, 5))
+
+            if sec["key"] in ["before", "during", "after"]:
+                # For image previews, we use a standard tk.Label (compatible with PIL)
+                preview_label = tk.Label(card, text="No Image", bg="#3B3B3B", fg="white")
+                preview_label.pack(pady=5)
+                path_entry = CTkEntry(card, width=200)
+                path_entry.pack(pady=5)
+                browse_btn = CTkButton(
+                    card,
+                    text="Browse",
+                    width=100,
+                    command=lambda lbl=preview_label, ent=path_entry: select_pic(lbl, ent)
+                )
+                browse_btn.pack(pady=5)
+                self.static_section_widgets[sec["key"]] = {"preview_label": preview_label, "entry": path_entry}
+            else:
+                path_entry = CTkEntry(card, width=200)
+                path_entry.pack(pady=(40, 10))
+                self.static_section_widgets[sec["key"]] = {"entry": path_entry}
 
         # Load existing static data if available.
         try:
@@ -284,71 +284,92 @@ class HomepageWindow(CTk):
             conn.close()
             if row:
                 if row[0] and os.path.exists(row[0]):
-                    set_preview_pic(row[0], sections[0][1], sections[0][2])
+                    set_preview_pic(row[0], self.static_section_widgets["before"]["preview_label"],
+                                    self.static_section_widgets["before"]["entry"])
                 if row[1] and os.path.exists(row[1]):
-                    set_preview_pic(row[1], sections[1][1], sections[1][2])
+                    set_preview_pic(row[1], self.static_section_widgets["during"]["preview_label"],
+                                    self.static_section_widgets["during"]["entry"])
                 if row[2] and os.path.exists(row[2]):
-                    set_preview_pic(row[2], sections[2][1], sections[2][2])
+                    set_preview_pic(row[2], self.static_section_widgets["after"]["preview_label"],
+                                    self.static_section_widgets["after"]["entry"])
                 if row[3]:
-                    sections[3][2].delete(0, tk.END)
-                    sections[3][2].insert(0, row[3])
+                    self.static_section_widgets["station_limits"]["entry"].delete(0, tk.END)
+                    self.static_section_widgets["station_limits"]["entry"].insert(0, row[3])
         except Exception as e:
             print(f"Error fetching existing images: {e}")
 
-        # Dynamic rows for additional image entries.
-        tk.Frame(self.frame, height=2, bg="gray").grid(row=5, column=0, columnspan=4, pady=10, sticky="ew")
-        dynamic_rows_container = tk.Frame(self.frame, bg="#11151f")
-        dynamic_rows_container.grid(row=6, column=0, columnspan=4, sticky="ew")
+        # --------------------------------------------------
+        # Dynamic Rows Section (Additional Image Entries)
+        CTkLabel(
+            scrollable_frame,
+            text="Additional Image Entries",
+            font=("Roboto", 16, "bold"),
+            text_color="white"
+        ).pack(pady=20)
+
+        dynamic_container = CTkFrame(scrollable_frame, corner_radius=10, fg_color="#2B2B2B")
+        dynamic_container.pack(pady=10, fill="x", padx=10)
+
         self.dynamic_rows_entries = []
 
-        def add_new_row(prepopulated_data=None):
-            row_frame = tk.Frame(dynamic_rows_container, bg="#11151f", bd=1, relief="solid", highlightthickness=1, highlightbackground="gray")
-            row_frame.pack(fill="x", pady=5, padx=5)
-            row_entries = {}
+        def add_new_dynamic_row(prepopulated_data=None):
+            row_card = CTkFrame(dynamic_container, corner_radius=10, fg_color="#3B3B3B")
+            row_card.pack(fill="x", padx=10, pady=10)
 
-            # Add a checkbox to decide if this row should be included in the report.
-            include_var = tk.BooleanVar(value=True)  # default checked
-            include_checkbox = CTkCheckBox(row_frame, text="Include", variable=include_var)
-            include_checkbox.pack(side="left", padx=5, pady=5)
-            row_entries["include"] = include_var
+            # Checkbox to include this row in the report.
+            include_var = tk.BooleanVar(value=True)
+            include_checkbox = CTkCheckBox(row_card, text="Include", variable=include_var)
+            include_checkbox.pack(side="left", padx=10, pady=10)
+            row_entries = {"include": include_var}
 
-            # Create entries for each phase with lowercase keys.
-            for phase in ["Before", "During", "After", "Station Limits"]:
-                phase_frame = tk.Frame(row_frame, bg="#11151f")
-                phase_frame.pack(side="left", expand=True, padx=5, pady=5)
-                tk.Label(phase_frame, text=phase, font=("Roboto", 12, "bold"),
-                        bg="#11151f", fg="white").pack()
+            phases = ["Before", "During", "After", "Station Limit/Grid"]
+            for phase in phases:
+                phase_frame = CTkFrame(row_card, corner_radius=10, fg_color="#4B4B4B")
+                phase_frame.pack(side="left", expand=True, fill="both", padx=10, pady=10)
+                CTkLabel(phase_frame, text=phase, font=("Roboto", 12, "bold"), text_color="white").pack(pady=(10, 5))
                 if phase in ["Before", "During", "After"]:
-                    preview_label = tk.Label(phase_frame, bg="#11151f")
+                    preview_label = tk.Label(phase_frame, text="No Image", bg="#4B4B4B", fg="white")
                     preview_label.pack(pady=5)
-                    path_entry = CTkEntry(phase_frame, width=200)
+                    path_entry = CTkEntry(phase_frame, width=150)
                     path_entry.pack(pady=5)
-                    browse_btn = CTkButton(phase_frame, text="Browse", width=100,
-                                        command=lambda lbl=preview_label, ent=path_entry: select_pic(lbl, ent))
+                    browse_btn = CTkButton(
+                        phase_frame,
+                        text="Browse",
+                        width=80,
+                        command=lambda lbl=preview_label, ent=path_entry: select_pic(lbl, ent)
+                    )
                     browse_btn.pack(pady=5)
+                    row_entries[phase.lower()] = path_entry
+                    # If prepopulated data exists for this phase, load it.
                     if prepopulated_data and prepopulated_data.get(phase.lower(), ""):
                         file_path = prepopulated_data.get(phase.lower())
                         path_entry.insert(0, file_path)
                         if os.path.exists(file_path):
                             set_preview_pic(file_path, preview_label, path_entry)
-                    row_entries[phase.lower()] = path_entry
                 else:
-                    path_entry = CTkEntry(phase_frame, width=200)
-                    path_entry.pack(pady=5)
+                    path_entry = CTkEntry(phase_frame, width=150)
+                    path_entry.pack(pady=(40, 10))
+                    row_entries["station_limits"] = path_entry
+                    # Load station limits if available.
                     if prepopulated_data and prepopulated_data.get("station_limits", ""):
                         path_entry.insert(0, prepopulated_data.get("station_limits"))
-                    row_entries["station_limits"] = path_entry
-
-            # Button to remove this dynamic row.
-            def remove_row():
-                row_frame.destroy()
-                if row_entries in self.dynamic_rows_entries:
-                    self.dynamic_rows_entries.remove(row_entries)
-            remove_btn = CTkButton(row_frame, text="X", width=30, command=remove_row, fg_color="red", hover_color="darkred")
-            remove_btn.pack(side="left", padx=5, pady=5)
-
+            remove_btn = CTkButton(
+                row_card,
+                text="Remove",
+                width=50,
+                fg_color="red",
+                hover_color="darkred",
+                command=lambda: remove_dynamic_row(row_card, row_entries)
+            )
+            remove_btn.pack(side="left", padx=10, pady=10)
             self.dynamic_rows_entries.append(row_entries)
 
+        def remove_dynamic_row(row_card, row_entries):
+            row_card.destroy()
+            if row_entries in self.dynamic_rows_entries:
+                self.dynamic_rows_entries.remove(row_entries)
+
+        # Load any preexisting dynamic rows from the database.
         try:
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
@@ -366,12 +387,16 @@ class HomepageWindow(CTk):
                     "after": data[2],
                     "station_limits": data[3]
                 }
-                add_new_row(prepopulated_data=prepopulated_data)
+                add_new_dynamic_row(prepopulated_data=prepopulated_data)
         except Exception as e:
             print("Error loading dynamic rows:", e)
 
-        add_row_btn = CTkButton(self.frame, text="Add Row", width=150, command=add_new_row)
-        add_row_btn.grid(row=7, column=0, columnspan=4, pady=10)
+        CTkButton(scrollable_frame, text="Add Row", width=150, command=add_new_dynamic_row).pack(pady=20)
+
+        # --------------------------------------------------
+        # Button Frame
+        btn_frame = CTkFrame(scrollable_frame, corner_radius=10, fg_color="#2B2B2B")
+        btn_frame.pack(pady=20)
 
         def update_all_uploaded_images(construction_type, item_number, item_name, static_data, dynamic_rows):
             base_dir = os.path.join(os.getcwd(), "images")
@@ -390,7 +415,6 @@ class HomepageWindow(CTk):
                     station_limits TEXT
                 )
             """)
-            
             def process_file(new_file, phase):
                 if new_file:
                     target_dir = os.path.join(base_dir, phase.lower())
@@ -413,10 +437,9 @@ class HomepageWindow(CTk):
                 file_path = static_data.get(phase, "")
                 static_saved[phase] = process_file(file_path, phase) if file_path else None
             static_saved["station_limits"] = static_data.get("station_limits", "")
-
             new_saved_paths = {}
             new_saved_paths["0"] = static_saved
-            
+
             row_index = 1
             for row_entries in self.dynamic_rows_entries:
                 row_saved = {}
@@ -434,14 +457,14 @@ class HomepageWindow(CTk):
                 WHERE construction_type=? AND item_number=? AND item_name=?
             """, (construction_type, item_number, item_name))
             existing_rows = cursor.fetchall()
-            
+
             new_files_set = set()
             for row in new_saved_paths.values():
                 for key in ["before", "during", "after"]:
                     path = row.get(key)
                     if path:
                         new_files_set.add(os.path.abspath(path))
-            
+
             for row in existing_rows:
                 for file_path in row[:3]:
                     if file_path and os.path.exists(file_path):
@@ -450,20 +473,20 @@ class HomepageWindow(CTk):
                                 os.remove(file_path)
                             except Exception as e:
                                 print(f"Error deleting file {file_path}: {e}")
-            
+
             cursor.execute("""
                 DELETE FROM completed_construction_images 
                 WHERE construction_type=? AND item_number=? AND item_name=?
             """, (construction_type, item_number, item_name))
-            
+
             cursor.execute("""
                 INSERT INTO completed_construction_images 
                 (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (construction_type, item_number, item_name, 0,
-                  new_saved_paths["0"]["before"], new_saved_paths["0"]["during"], new_saved_paths["0"]["after"],
-                  new_saved_paths["0"]["station_limits"]))
-            
+                new_saved_paths["0"]["before"], new_saved_paths["0"]["during"], new_saved_paths["0"]["after"],
+                new_saved_paths["0"]["station_limits"]))
+
             for i in range(1, row_index):
                 row_data = new_saved_paths[str(i)]
                 cursor.execute("""
@@ -471,33 +494,26 @@ class HomepageWindow(CTk):
                     (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (construction_type, item_number, item_name, i,
-                      row_data["before"], row_data["during"], row_data["after"], row_data["station_limits"]))
-            
+                    row_data["before"], row_data["during"], row_data["after"], row_data["station_limits"]))
             conn.commit()
             conn.close()
 
         def upload_images():
-            before_path = sections[0][2].get().strip()
-            during_path = sections[1][2].get().strip()
-            after_path = sections[2][2].get().strip()
-            station_limits_val = sections[3][2].get().strip()
-
-            static_provided = before_path or during_path or after_path or station_limits_val
+            static_data = {
+                "before": self.static_section_widgets["before"]["entry"].get().strip(),
+                "during": self.static_section_widgets["during"]["entry"].get().strip(),
+                "after": self.static_section_widgets["after"]["entry"].get().strip(),
+                "station_limits": self.static_section_widgets["station_limits"]["entry"].get().strip()
+            }
+            static_provided = static_data["before"] or static_data["during"] or static_data["after"]
             dynamic_provided = any(
-                row["before"].get().strip() or row["during"].get().strip() or row["after"].get().strip() or row["station_limits"].get().strip()
-                for row in self.dynamic_rows_entries
+                row["before"].get().strip() or row["during"].get().strip() or row["after"].get().strip()
+                for row in self.dynamic_rows_entries if "before" in row
             )
             if not (static_provided or dynamic_provided):
-                messagebox.showerror("Error", "Please select at least one image or provide station limits.")
+                messagebox.showerror("Error", "Please upload at least one geotagged image.")
                 return
-
             try:
-                static_data = {
-                    "before": before_path,
-                    "during": during_path,
-                    "after": after_path,
-                    "station_limits": station_limits_val
-                }
                 update_all_uploaded_images(
                     construction_type, item_number, item_name,
                     static_data=static_data,
@@ -508,17 +524,14 @@ class HomepageWindow(CTk):
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update images: {e}")
 
-        btn_frame = tk.Frame(self.frame, bg="#11151f")
-        btn_frame.grid(row=8, column=0, columnspan=4, pady=10)
-
-        submit_btn = CTkButton(btn_frame, text="Submit", width=150, command=upload_images)
-        submit_btn.pack(side="left", padx=20)
-
-        cancel_btn = CTkButton(btn_frame, text="Cancel", width=150, command=self.on_add_image_window_close)
-        cancel_btn.pack(side="left", padx=20)
-        
-        generate_report_btn = CTkButton(btn_frame, text="Generate Report", width=150, command=lambda: self.generate_report(construction_type, item_number, item_name))
-        generate_report_btn.pack(side="left", padx=20)
+        CTkButton(btn_frame, text="Submit", width=150, command=upload_images).pack(side="left", padx=20, pady=10)
+        CTkButton(btn_frame, text="Cancel", width=150, command=self.on_add_image_window_close).pack(side="left", padx=20, pady=10)
+        CTkButton(
+            btn_frame,
+            text="Generate Report",
+            width=150,
+            command=lambda: self.generate_report(construction_type, item_number, item_name)
+        ).pack(side="left", padx=20, pady=10)
 
     def on_add_image_window_close(self):
         if self.add_image_window is not None:
@@ -720,9 +733,14 @@ class HomepageWindow(CTk):
 
         # Include dynamic rows that are checked.
         if hasattr(self, 'dynamic_rows_entries'):
+            first_dynamic = True
             for idx, row_entries in enumerate(self.dynamic_rows_entries, start=1):
                 if "include" in row_entries and row_entries["include"].get():
-                    document.add_page_break()
+                    if not first_dynamic:
+                        document.add_page_break()
+                    first_dynamic = False
+                    
+                    # Insert 2 blank paragraphs between header and project information.
                     document.add_paragraph()
                     document.add_paragraph()
 

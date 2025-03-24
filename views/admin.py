@@ -1,12 +1,13 @@
 import sqlite3
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, filedialog
 from customtkinter import (
     CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry,
-    CTkComboBox, CTkToplevel, CTkCheckBox
+    CTkComboBox
 )
 import sys
 import os
+import pandas as pd
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for PyInstaller and development"""
@@ -16,7 +17,7 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-DB_FILENAME = (resource_path("database/vswa_db.db"))
+DB_FILENAME = resource_path("database/vswa_db.db")
 
 class AdminWindow(CTk):
     def __init__(self, user_id, login_app):
@@ -29,16 +30,15 @@ class AdminWindow(CTk):
         self.setup_window()
         self.create_widgets(user_id)
 
-    # ─── OVERRIDE THE EXCEPTION HANDLER TO IGNORE THE CLICK ANIMATION ERROR ───
+    # ─── OVERRIDE THE EXCEPTION HANDLER ────────────────────────────────
     def report_callback_exception(self, exc, val, tb):
         error_message = str(val)
         if "invalid command name" in error_message and "_click_animation" in error_message:
-            # Ignore the error that comes from the click animation callback
             return
         else:
             super().report_callback_exception(exc, val, tb)
 
-    # ─── DATABASE HELPERS ────────────────────────────────────────────────
+    # ─── DATABASE HELPERS ──────────────────────────────────────────────
     def _run_query(self, query, params=(), commit=False, fetchone=False, fetchall=False):
         try:
             with sqlite3.connect(self.db_filename) as conn:
@@ -62,12 +62,7 @@ class AdminWindow(CTk):
         y_position = (screen_height - height) // 2
         window.geometry(f"{width}x{height}+{x_position}+{y_position}")
 
-    # ─── DATA FETCHING METHODS ───────────────────────────────────────────
-    def fetch_user_id(self, user_id):
-        query = "SELECT id FROM users WHERE user_id = ?"
-        result = self._run_query(query, (user_id,), fetchone=True)
-        return result[0] if result else None
-
+    # ─── DATA FETCHING METHODS ─────────────────────────────────────────
     def fetch_project_details(self, user_id):
         try:
             conn = sqlite3.connect(self.db_filename)
@@ -85,11 +80,7 @@ class AdminWindow(CTk):
             conn.close()
 
     def fetch_selected_construction_items(self):
-        query = """
-            SELECT ct.name, sci.item_number, sci.item_name
-            FROM selected_construction_items sci
-            JOIN construction_types ct ON sci.construction_type_id = ct.id
-        """
+        query = "SELECT item_number, item_name, quantity, unit FROM selected_construction_items"
         rows = self._run_query(query, fetchall=True)
         return rows if rows else []
 
@@ -98,10 +89,9 @@ class AdminWindow(CTk):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        headers = ["Construction Type", "Item Number", "Item Name"]
-        col_widths = [200, 100, 500]
+        headers = ["Item Number", "Item Name", "Quantity", "Unit"]
+        col_widths = [150, 500, 100, 100]
 
-        # Recreate header row (using pack inside a frame)
         header_frame = CTkFrame(self.scrollable_frame, fg_color="black")
         header_frame.pack(fill="x", padx=1, pady=1)
         for header, width in zip(headers, col_widths):
@@ -110,8 +100,6 @@ class AdminWindow(CTk):
             col_label.pack(side="left", padx=1, pady=1)
 
         selected_items = self.fetch_selected_construction_items()
-
-        # Populate rows
         for index, item in enumerate(selected_items):
             bg_color = "#2E2E2E" if (index + 1) % 2 == 0 else "#1C1C1C"
             row_frame = CTkFrame(self.scrollable_frame, fg_color="black")
@@ -121,7 +109,7 @@ class AdminWindow(CTk):
                                       width=width, height=30, fg_color=bg_color)
                 cell_label.pack(side="left", padx=1, pady=1)
 
-    # ─── UI SETUP ─────────────────────────────────────────────────────────
+    # ─── UI SETUP ──────────────────────────────────────────────────────
     def setup_window(self):
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
@@ -133,7 +121,6 @@ class AdminWindow(CTk):
         self.resizable(False, False)
 
     def create_widgets(self, user_id):
-        # Fetch project details
         project_details = self.fetch_project_details(user_id)
         project_name = project_details.get("project_name", "N/A")
         location = project_details.get("location", "N/A")
@@ -145,17 +132,16 @@ class AdminWindow(CTk):
         self.logout_button = CTkButton(self, text="Logout", font=("Roboto", 12), command=self.logout)
         self.logout_button.pack(pady=5, anchor="ne", padx=10)
 
-        # Information Frame using pack
+        # ─── Project Information Frame ──────────────────────────────
         self.info_frame = CTkFrame(self, corner_radius=10, fg_color="#11151f")
         self.info_frame.pack(pady=10, padx=10, fill="x")
 
-        # Top bar for edit button
+        # Top bar for the Edit button
         self.top_frame = CTkFrame(self.info_frame, fg_color="#11151f")
         self.top_frame.pack(fill="x")
         self.edit_button = CTkButton(self.top_frame, text="Edit", font=("Roboto", 12), command=self.enable_editing)
         self.edit_button.pack(side="right", padx=10, pady=5)
 
-        # Row for project name
         self.row_project_name = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_project_name.pack(fill="x", padx=10, pady=2)
         self.project_name_label = CTkLabel(self.row_project_name, text="NAME OF PROJECT:", font=("Roboto", 12, "bold"))
@@ -163,7 +149,6 @@ class AdminWindow(CTk):
         self.project_name_value = CTkLabel(self.row_project_name, text=project_name, font=("Roboto", 12, "bold"))
         self.project_name_value.pack(side="left", padx=10)
 
-        # Row for location
         self.row_location = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_location.pack(fill="x", padx=10, pady=2)
         self.location_label = CTkLabel(self.row_location, text="LOCATION:", font=("Roboto", 12, "bold"))
@@ -171,7 +156,6 @@ class AdminWindow(CTk):
         self.location_value = CTkLabel(self.row_location, text=location, font=("Roboto", 12, "bold"))
         self.location_value.pack(side="left", padx=10)
 
-        # Row for project ID
         self.row_project_id = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_project_id.pack(fill="x", padx=10, pady=2)
         self.project_id_label = CTkLabel(self.row_project_id, text="PROJECT ID:", font=("Roboto", 12, "bold"))
@@ -179,7 +163,6 @@ class AdminWindow(CTk):
         self.project_id_value = CTkLabel(self.row_project_id, text=project_id, font=("Roboto", 12, "bold"))
         self.project_id_value.pack(side="left", padx=10)
 
-        # Row for contractor
         self.row_contractor = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_contractor.pack(fill="x", padx=10, pady=2)
         self.contractor_label = CTkLabel(self.row_contractor, text="CONTRACTOR:", font=("Roboto", 12, "bold"))
@@ -187,7 +170,6 @@ class AdminWindow(CTk):
         self.contractor_value = CTkLabel(self.row_contractor, text=contractor_name, font=("Roboto", 12, "bold"))
         self.contractor_value.pack(side="left", padx=10)
 
-        # Row for project type
         self.row_project_type = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_project_type.pack(fill="x", padx=10, pady=2)
         self.project_type_label = CTkLabel(self.row_project_type, text="PROJECT TYPE:", font=("Roboto", 12, "bold"))
@@ -195,191 +177,106 @@ class AdminWindow(CTk):
         self.project_type_value = CTkLabel(self.row_project_type, text=project_type, font=("Roboto", 12, "bold"))
         self.project_type_value.pack(side="left", padx=10)
 
-        # Add Items Button
-        self.add_item_button = CTkButton(self, text="Add Items", font=("Roboto", 12), command=self.show_construction_types)
-        self.add_item_button.pack(padx=10, pady=3, anchor="w")
+        # ─── Separate Frame for the Upload Excel Button ─────────────
+        self.upload_frame = CTkFrame(self, corner_radius=10)
+        self.upload_frame.pack(pady=10, padx=10, fill="x")
+        self.upload_button = CTkButton(
+            self.upload_frame,
+            text="Upload POW",
+            font=("Roboto", 12),
+            command=self.upload_excel
+        )
+        self.upload_button.pack(side="left", padx=10, pady=5)
 
-        # Extra Frame for List of Added Construction Items
+        # ─── Construction Items List Frame ──────────────────────────
         self.extra_frame = CTkFrame(self, corner_radius=10, fg_color="#11151f")
         self.extra_frame.pack(pady=10, padx=10, fill="both", expand=True)
-
         self.extra_label = CTkLabel(self.extra_frame, text="List of Construction Items", font=("Roboto", 16, "bold"))
         self.extra_label.pack(pady=10)
 
         self.table_container = tk.Frame(self.extra_frame, bd=2, relief="solid")
         self.table_container.pack(padx=10, pady=10, fill="both", expand=True)
 
-        # Create a scrollable table
         self.table_canvas = tk.Canvas(self.table_container, bg="#1C1C1C", highlightthickness=0)
         self.scrollbar = tk.Scrollbar(self.table_container, orient="vertical", command=self.table_canvas.yview)
         self.scrollable_frame = CTkFrame(self.table_canvas, fg_color="#1C1C1C")
-
         self.scrollable_frame.bind(
             "<Configure>", lambda e: self.table_canvas.configure(scrollregion=self.table_canvas.bbox("all"))
         )
         self.table_canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         self.table_canvas.configure(yscrollcommand=self.scrollbar.set)
-
         self.table_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
-        # Initially populate the table
         self.refresh_construction_items_table()
 
-    # ─── CONSTRUCTION TYPES / ITEMS ──────────────────────────────────────
-    def show_construction_types(self):
-        project_details = self.fetch_project_details(self.current_user_id)
-        project_type_text = project_details.get("project_type", "N/A")
-
-        query = "SELECT id FROM project_types WHERE name = ?"
-        project_type_id_result = self._run_query(query, (project_type_text,), fetchone=True)
-        if not project_type_id_result:
-            print("No matching project type found.")
-            return
-        project_type_id = project_type_id_result[0]
-
-        query = "SELECT id, name FROM construction_types WHERE project_type_id = ?"
-        construction_types = self._run_query(query, (project_type_id,), fetchall=True)
-
-        self.items_window = CTkToplevel(self)
-        self.items_window.title("Construction Items")
-        window_width, window_height = 430, 530
-        self._center_window(self.items_window, window_width, window_height)
-        self.items_window.resizable(False, False)
-        self.items_window.lift()
-        self.items_window.focus()
-        self.items_window.grab_set()
-
-        if construction_types:
-            self.construction_type_map = {name: id for id, name in construction_types}
-            construction_type_names = [""] + list(self.construction_type_map.keys())
-            self.construction_label = CTkLabel(
-                self.items_window,
-                text="Select a construction type",
-                font=("Roboto", 12, "bold")
-            )
-            self.construction_label.pack(pady=(20, 5))
-
-            self.combo_box = CTkComboBox(
-                self.items_window,
-                values=construction_type_names,
-                width=300,
-                command=self.update_construction_items
-            )
-            self.combo_box.set("")
-            self.combo_box.pack(padx=10, pady=10)
-
-            self.items_label = CTkLabel(self.items_window, text="", font=("Roboto", 12))
-            self.items_label.pack(pady=10)
-        else:
-            self.no_items_label = CTkLabel(
-                self.items_window,
-                text="No construction types found.",
-                font=("Roboto", 12)
-            )
-            self.no_items_label.pack(pady=20)
-
-    def update_construction_items(self, selected_construction_type):
-        self.construction_type_id = self.construction_type_map.get(selected_construction_type)
-        query = "SELECT id, item_number, name FROM construction_items WHERE construction_type_id = ?"
-        items = self._run_query(query, (self.construction_type_id,), fetchall=True)
-
-        if hasattr(self, 'items_frame'):
-            self.items_frame.destroy()
-
-        self.items_frame = CTkFrame(self.items_window)
-        self.items_frame.pack(pady=10, fill="both", expand=True)
-
-        self.item_checkboxes = {}
-        self.item_data_map = {}
-
-        if items:
-            for item_id, item_number, item_name in items:
-                formatted_text = f"{item_number} - {item_name}"
-                var = tk.IntVar()
-                checkbox = CTkCheckBox(self.items_frame, text=formatted_text, variable=var)
-                checkbox.pack(anchor="w", padx=10, pady=2)
-                self.item_checkboxes[item_id] = var
-                self.item_data_map[item_id] = {"item_number": item_number, "name": item_name}
-        else:
-            self.no_items_label = CTkLabel(
-                self.items_frame,
-                text="No items found.",
-                font=("Roboto", 12)
-            )
-            self.no_items_label.pack(pady=10)
-
-        # Add a textbox for "Others" so the user can enter a custom item
-        self.others_label = CTkLabel(self.items_frame, text="Others (custom item):", font=("Roboto", 12))
-        self.others_label.pack(anchor="w", padx=10, pady=(10,2))
-        self.other_item_entry = CTkEntry(self.items_frame, placeholder_text="Enter custom item", font=("Roboto", 12))
-        self.other_item_entry.pack(anchor="w", padx=10, pady=(0,10))
-
-        self.submit_button = CTkButton(
-            self.items_frame,
-            text="Submit",
-            command=self.save_selected_items
+    # ─── UPLOAD EXCEL FUNCTIONALITY ─────────────────────────────────────
+    def upload_excel(self):
+        file_path = filedialog.askopenfilename(
+            title="Select Excel File",
+            filetypes=[("Excel files", "*.xlsx *.xls")]
         )
-        self.submit_button.pack(pady=10)
-
-    def save_selected_items(self):
-        # Collect items from checkboxes
-        selected_items = [
-            (
-                self.current_user_id,
-                self.construction_type_id,
-                item_id,
-                self.item_data_map[item_id]['item_number'],
-                self.item_data_map[item_id]['name']
-            )
-            for item_id, var in self.item_checkboxes.items() if var.get()
-        ]
-
-        # Check if a custom "Others" item was provided.
-        other_item_text = self.other_item_entry.get().strip()
-        if other_item_text:
-            # Insert a custom item record with a dummy item_id (-1) and "N/A" as item_number.
-            selected_items.append((self.current_user_id, self.construction_type_id, -1, "N/A", other_item_text))
-
-        if not selected_items:
-            messagebox.showwarning("No Selection", "No items selected.")
-            return
-
-        create_table_query = """
-            CREATE TABLE IF NOT EXISTS selected_construction_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                construction_type_id INTEGER NOT NULL,
-                item_id INTEGER NOT NULL,
-                item_number TEXT NOT NULL,
-                item_name TEXT NOT NULL,
-                FOREIGN KEY (construction_type_id) REFERENCES construction_types(id),
-                FOREIGN KEY (item_id) REFERENCES construction_items(id)
-            )
-        """
-        self._run_query(create_table_query, commit=True)
-
-        insert_query = """
-            INSERT INTO selected_construction_items 
-            (user_id, construction_type_id, item_id, item_number, item_name)
-            VALUES (?, ?, ?, ?, ?)
-        """
+        if not file_path:
+            return  # User cancelled
+        
         try:
-            with sqlite3.connect(self.db_filename) as conn:
-                cursor = conn.cursor()
-                cursor.executemany(insert_query, selected_items)
-                conn.commit()
-        except sqlite3.Error as e:
-            messagebox.showerror("Database Error", f"An error occurred: {e}")
-            return
+            # Read the Excel file with header on row 38 (0-indexed 37)
+            df = pd.read_excel(file_path, header=37)
+            # Clean up headers by stripping extra spaces/newlines.
+            df.columns = [str(col).strip() for col in df.columns]
+            # Check for required columns
+            has_item_no = "Item No." in df.columns
+            has_scope_of_work = "Scope of Work" in df.columns
+            has_quantity = "Quantity" in df.columns
+            has_unit = "Unit" in df.columns
+            
+            if not (has_item_no or has_scope_of_work or has_quantity or has_unit):
+                messagebox.showwarning(
+                    "Missing Columns",
+                    "Neither 'Item No.' nor 'Scope of Work' nor 'Quantity' nor 'Unit' was found in the Excel file."
+                )
+                return
+            
+            # Remove rows where all required columns are empty.
+            df = df.dropna(how="all", subset=[col for col in ["Item No.", "Scope of Work", "Quantity", "Unit"] if col in df.columns])
+            # Create the selected_construction_items table if it doesn't exist
+            create_table_query = """
+                CREATE TABLE IF NOT EXISTS selected_construction_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    item_number TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    quantity TEXT NOT NULL,
+                    unit TEXT NOT NULL
+                )
+            """
+            self._run_query(create_table_query, commit=True)
+            # Insert query for adding a record
+            insert_query = """
+                INSERT INTO selected_construction_items 
+                (user_id, item_number, item_name, quantity, unit)
+                VALUES (?, ?, ?, ?, ?)
+            """
+            for _, row in df.iterrows():
+                item_no_value = str(row["Item No."]) if has_item_no and pd.notna(row["Item No."]) else "N/A"
+                scope_value = str(row["Scope of Work"]) if has_scope_of_work and pd.notna(row["Scope of Work"]) else "N/A"
+                quantity_value = str(row["Quantity"]) if has_quantity and pd.notna(row["Quantity"]) else "N/A"
+                unit_value = str(row["Unit"]) if has_unit and pd.notna(row["Unit"]) else "N/A"
+                self._run_query(
+                    insert_query,
+                    params=(self.current_user_id, item_no_value, scope_value, quantity_value, unit_value),
+                    commit=True
+                )
+            messagebox.showinfo(
+                "Success",
+                "Excel file uploaded and data inserted into selected_construction_items!"
+            )
+            self.refresh_construction_items_table()
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
 
-        messagebox.showinfo("Success", "Selected items saved successfully.")
-        self.refresh_construction_items_table()
-        self.items_window.destroy()
-
-    # ─── PROJECT DETAILS EDITING ──────────────────────────────────────────
+    # ─── PROJECT DETAILS EDITING ─────────────────────────────────────────
     def enable_editing(self):
-        # Hide value labels and the edit button.
         self.project_name_value.pack_forget()
         self.location_value.pack_forget()
         self.project_id_value.pack_forget()
@@ -387,7 +284,6 @@ class AdminWindow(CTk):
         self.project_type_value.pack_forget()
         self.edit_button.pack_forget()
 
-        # Create entry fields in place of the value labels.
         self.project_name_entry = CTkEntry(self.row_project_name, font=("Roboto", 12))
         self.project_name_entry.insert(0, self.project_name_value.cget("text"))
         self.project_name_entry.pack(fill="x", padx=10, expand=True)
@@ -410,7 +306,6 @@ class AdminWindow(CTk):
         self.project_type_combo.set(self.project_type_value.cget("text"))
         self.project_type_combo.pack(side="left", padx=10)
 
-        # Save and Cancel buttons (pack them into a new control row)
         self.edit_controls = CTkFrame(self.info_frame, fg_color="#11151f")
         self.edit_controls.pack(fill="x", padx=10, pady=5)
         self.save_button = CTkButton(self.edit_controls, text="Save", font=("Roboto", 12), command=self.save_changes)
@@ -467,7 +362,6 @@ class AdminWindow(CTk):
                 commit=True
             )
 
-        # Update the value labels with new data.
         self.project_name_value.configure(text=new_project_name)
         self.location_value.configure(text=new_location)
         self.project_id_value.configure(text=new_project_id)
@@ -477,7 +371,6 @@ class AdminWindow(CTk):
         self.cancel_editing()
 
     def cancel_editing(self):
-        # Remove entry widgets and the edit control row.
         if hasattr(self, 'project_name_entry'):
             self.project_name_entry.destroy()
         if hasattr(self, 'location_entry'):
@@ -495,25 +388,20 @@ class AdminWindow(CTk):
         if hasattr(self, 'edit_controls'):
             self.edit_controls.destroy()
 
-        # Re-pack the original value labels.
         self.project_name_value.pack(side="left", padx=10)
         self.location_value.pack(side="left", padx=10)
         self.project_id_value.pack(side="left", padx=10)
         self.contractor_value.pack(side="left", padx=10)
         self.project_type_value.pack(side="left", padx=10)
-        # Re-pack the edit button.
         self.edit_button.pack(side="right", padx=10, pady=5)
 
-    # ─── WINDOW HANDLING ──────────────────────────────────────────────────
+    # ─── WINDOW HANDLING ────────────────────────────────────────────────
     def on_close(self):
         self.logout()
 
     def logout(self):
-        # Disable the logout button to prevent further clicks.
         self.logout_button.configure(state="disabled")
         if self.login_app:
             self.login_app.deiconify()
-        # Withdraw (hide) the window first so pending callbacks can finish,
-        # then destroy the window after a short delay.
         self.withdraw()
         self.after(200, self.destroy)

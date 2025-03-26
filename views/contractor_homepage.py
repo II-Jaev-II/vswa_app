@@ -46,6 +46,16 @@ class HomepageWindow(CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.setup_window()
         self.create_widgets()
+        
+    # ─── MOUSE WHEEL SCROLLING METHODS ───────────────────────────────
+    def _bind_mousewheel(self, event):
+        self.table_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+    
+    def _unbind_mousewheel(self, event):
+        self.table_canvas.unbind_all("<MouseWheel>")
+    
+    def _on_mousewheel(self, event):
+        self.table_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def setup_window(self):
         screen_width = self.winfo_screenwidth()
@@ -104,6 +114,10 @@ class HomepageWindow(CTk):
 
         self.table_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
+        
+        # Bind mouse wheel events when the cursor is over the canvas
+        self.table_canvas.bind("<Enter>", self._bind_mousewheel)
+        self.table_canvas.bind("<Leave>", self._unbind_mousewheel)
 
         # Update Headers for the table to match the new structure.
         headers = ["Item Number", "Item Name", "Quantity", "Unit", "Actions"]

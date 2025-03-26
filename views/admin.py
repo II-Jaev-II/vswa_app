@@ -29,6 +29,16 @@ class AdminWindow(CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.setup_window()
         self.create_widgets(user_id)
+        
+    # ─── MOUSE WHEEL SCROLLING METHODS ───────────────────────────────
+    def _bind_mousewheel(self, event):
+        self.table_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+    
+    def _unbind_mousewheel(self, event):
+        self.table_canvas.unbind_all("<MouseWheel>")
+    
+    def _on_mousewheel(self, event):
+        self.table_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     # ─── OVERRIDE THE EXCEPTION HANDLER ────────────────────────────────
     def report_callback_exception(self, exc, val, tb):
@@ -207,6 +217,10 @@ class AdminWindow(CTk):
         self.table_canvas.configure(yscrollcommand=self.scrollbar.set)
         self.table_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
+        
+        # Bind mouse wheel events when the cursor is over the canvas
+        self.table_canvas.bind("<Enter>", self._bind_mousewheel)
+        self.table_canvas.bind("<Leave>", self._unbind_mousewheel)
 
         self.refresh_construction_items_table()
 
@@ -257,19 +271,38 @@ class AdminWindow(CTk):
                 (user_id, item_number, item_name, quantity, unit)
                 VALUES (?, ?, ?, ?, ?)
             """
+            # Query to check for duplicates
+            select_duplicate_query = """
+                SELECT 1 FROM selected_construction_items 
+                WHERE user_id = ? AND item_number = ? AND item_name = ? AND quantity = ? AND unit = ?
+            """
+            inserted_count = 0
+            duplicate_count = 0
             for _, row in df.iterrows():
                 item_no_value = str(row["Item No."]) if has_item_no and pd.notna(row["Item No."]) else "N/A"
                 scope_value = str(row["Scope of Work"]) if has_scope_of_work and pd.notna(row["Scope of Work"]) else "N/A"
                 quantity_value = str(row["Quantity"]) if has_quantity and pd.notna(row["Quantity"]) else "N/A"
                 unit_value = str(row["Unit"]) if has_unit and pd.notna(row["Unit"]) else "N/A"
-                self._run_query(
-                    insert_query,
+                
+                duplicate = self._run_query(
+                    select_duplicate_query,
                     params=(self.current_user_id, item_no_value, scope_value, quantity_value, unit_value),
-                    commit=True
+                    fetchone=True
                 )
+                if duplicate:
+                    duplicate_count += 1
+                    continue
+                else:
+                    self._run_query(
+                        insert_query,
+                        params=(self.current_user_id, item_no_value, scope_value, quantity_value, unit_value),
+                        commit=True
+                    )
+                    inserted_count += 1
+            
             messagebox.showinfo(
-                "Success",
-                "Excel file uploaded and data inserted into selected_construction_items!"
+                "Upload Complete",
+                f"Excel file processed!\nNew records inserted: {inserted_count}\nDuplicate records skipped: {duplicate_count}"
             )
             self.refresh_construction_items_table()
         except Exception as e:

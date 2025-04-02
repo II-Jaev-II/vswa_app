@@ -7,6 +7,7 @@ import os
 import shutil
 import uuid
 import sys
+import datetime
 from docx import Document
 from docx.shared import Inches, Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -90,12 +91,12 @@ class HomepageWindow(CTk):
             f"PROJECT TYPE: {project_type}"
         ]
         for text in labels_info:
-            CTkLabel(self.info_frame, text=text, font=("Roboto", 12, "bold"), anchor="w").pack(padx=10, pady=2, anchor="w")
+            CTkLabel(self.info_frame, text=text, font=("Roboto", 12, "bold"), text_color="white", anchor="w").pack(padx=10, pady=2, anchor="w")
 
         self.extra_frame = CTkFrame(self, corner_radius=10, fg_color="#11151f")
         self.extra_frame.pack(pady=10, padx=10, fill="both", expand=True)
 
-        self.extra_label = CTkLabel(self.extra_frame, text="List of Construction Items", font=("Roboto", 16, "bold"))
+        self.extra_label = CTkLabel(self.extra_frame, text="List of Construction Items", font=("Roboto", 16, "bold"), text_color="white")
         self.extra_label.pack(pady=10)
 
         self.table_container = tk.Frame(self.extra_frame, bd=2, relief="solid")
@@ -127,7 +128,7 @@ class HomepageWindow(CTk):
         header_frame.grid(row=0, column=0, columnspan=len(headers), sticky="nsew", padx=1, pady=1)
 
         for col_index, (col_name, col_width) in enumerate(zip(headers, col_widths)):
-            col_label = CTkLabel(header_frame, text=col_name, font=("Roboto", 12, "bold"),
+            col_label = CTkLabel(header_frame, text=col_name, font=("Roboto", 12, "bold"), text_color="white",
                                  width=col_width, height=30, fg_color="gray20")
             col_label.grid(row=0, column=col_index, padx=1, pady=1, sticky="nsew")
 
@@ -143,7 +144,7 @@ class HomepageWindow(CTk):
 
             # item: (item_number, item_name, quantity, unit)
             for col_index, (value, col_width) in enumerate(zip(item, col_widths[:-1])):
-                cell_label = CTkLabel(row_frame, text=value, font=("Roboto", 12),
+                cell_label = CTkLabel(row_frame, text=value, font=("Roboto", 12), text_color="white",
                                       width=col_width, height=30, fg_color=bg_color)
                 cell_label.grid(row=0, column=col_index, padx=1, pady=1, sticky="nsew")
 
@@ -410,7 +411,8 @@ class HomepageWindow(CTk):
                     image_during TEXT,
                     image_after TEXT,
                     station_limits TEXT,
-                    report_generated INTEGER DEFAULT 0
+                    report_generated INTEGER DEFAULT 0,
+                    upload_date TEXT
                 )
             """)
             cursor.execute("""
@@ -463,7 +465,10 @@ class HomepageWindow(CTk):
                 DELETE FROM completed_construction_images 
                 WHERE item_number=? AND item_name=?
             """, (item_number, item_name))
-
+            
+            # Get today's date as a string in ISO format (YYYY-MM-DD)
+            today = datetime.date.today().isoformat()
+            
             new_data = (new_saved_paths["0"]["before"], new_saved_paths["0"]["during"], new_saved_paths["0"]["after"], new_saved_paths["0"]["station_limits"])
             if 0 in existing_dict and existing_dict[0][:4] == new_data:
                 report_flag = existing_dict[0][4]
@@ -471,11 +476,11 @@ class HomepageWindow(CTk):
                 report_flag = 0
             cursor.execute("""
                 INSERT INTO completed_construction_images 
-                (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits, report_generated)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits, report_generated, upload_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, ("", item_number, item_name, 0,
                 new_saved_paths["0"]["before"], new_saved_paths["0"]["during"], new_saved_paths["0"]["after"],
-                new_saved_paths["0"]["station_limits"], report_flag))
+                new_saved_paths["0"]["station_limits"], report_flag, today))
 
             for i in range(1, row_index):
                 row_data = new_saved_paths[str(i)]
@@ -486,10 +491,10 @@ class HomepageWindow(CTk):
                     report_flag = 0
                 cursor.execute("""
                     INSERT INTO completed_construction_images 
-                    (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits, report_generated)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits, report_generated, upload_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, ("", item_number, item_name, i,
-                    row_data["before"], row_data["during"], row_data["after"], row_data["station_limits"], report_flag))
+                    row_data["before"], row_data["during"], row_data["after"], row_data["station_limits"], report_flag, today))
             conn.commit()
             conn.close()
 

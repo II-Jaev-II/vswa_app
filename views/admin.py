@@ -1,10 +1,10 @@
 import sqlite3
 import tkinter as tk
+import customtkinter as ctk
 from tkinter import messagebox, filedialog
-from customtkinter import (
-    CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry,
-    CTkComboBox
-)
+from customtkinter import CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry, CTkComboBox
+from tkcalendar import DateEntry  # New import for date picker
+from PIL import Image, ImageTk  # Import Pillow for image handling
 import sys
 import os
 import pandas as pd
@@ -29,7 +29,9 @@ class AdminWindow(CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.setup_window()
         self.create_widgets(user_id)
-        
+        # Keep references to PhotoImage objects to prevent garbage collection
+        self.image_refs = []
+
     # ─── MOUSE WHEEL SCROLLING METHODS ───────────────────────────────
     def _bind_mousewheel(self, event):
         self.table_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
@@ -78,8 +80,7 @@ class AdminWindow(CTk):
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT project_name, location, project_id, contractor_name, project_type "
-                "FROM project_informations LIMIT 1"
+                "SELECT project_name, location, project_id, contractor_name, project_type FROM project_informations LIMIT 1"
             )
             row = cursor.fetchone()
             return dict(zip(["project_name", "location", "project_id", "contractor_name", "project_type"], row)) if row else {}
@@ -100,13 +101,13 @@ class AdminWindow(CTk):
             widget.destroy()
 
         headers = ["Item Number", "Item Name", "Quantity", "Unit"]
-        col_widths = [150, 500, 100, 100]
+        col_widths = [150, 400, 150, 100]
 
         header_frame = CTkFrame(self.scrollable_frame, fg_color="black")
         header_frame.pack(fill="x", padx=1, pady=1)
         for header, width in zip(headers, col_widths):
             col_label = CTkLabel(header_frame, text=header, font=("Roboto", 12, "bold"),
-                                 width=width, height=30, fg_color="gray20")
+                                 width=width, height=30, fg_color="gray20", text_color="white")
             col_label.pack(side="left", padx=1, pady=1)
 
         selected_items = self.fetch_selected_construction_items()
@@ -116,7 +117,7 @@ class AdminWindow(CTk):
             row_frame.pack(fill="x", padx=1, pady=1)
             for value, width in zip(item, col_widths):
                 cell_label = CTkLabel(row_frame, text=value, font=("Roboto", 12),
-                                      width=width, height=30, fg_color=bg_color)
+                                      width=width, height=30, fg_color=bg_color, text_color="white")
                 cell_label.pack(side="left", padx=1, pady=1)
 
     # ─── UI SETUP ──────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ class AdminWindow(CTk):
         position_y = (screen_height - window_height) // 2
         self.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
         self.resizable(False, False)
-
+    
     def create_widgets(self, user_id):
         project_details = self.fetch_project_details(user_id)
         project_name = project_details.get("project_name", "N/A")
@@ -154,40 +155,40 @@ class AdminWindow(CTk):
 
         self.row_project_name = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_project_name.pack(fill="x", padx=10, pady=2)
-        self.project_name_label = CTkLabel(self.row_project_name, text="NAME OF PROJECT:", font=("Roboto", 12, "bold"))
+        self.project_name_label = CTkLabel(self.row_project_name, text="NAME OF PROJECT:", font=("Roboto", 12, "bold"), text_color="white")
         self.project_name_label.pack(side="left")
-        self.project_name_value = CTkLabel(self.row_project_name, text=project_name, font=("Roboto", 12, "bold"))
+        self.project_name_value = CTkLabel(self.row_project_name, text=project_name, font=("Roboto", 12, "bold"), text_color="white")
         self.project_name_value.pack(side="left", padx=10)
 
         self.row_location = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_location.pack(fill="x", padx=10, pady=2)
-        self.location_label = CTkLabel(self.row_location, text="LOCATION:", font=("Roboto", 12, "bold"))
+        self.location_label = CTkLabel(self.row_location, text="LOCATION:", font=("Roboto", 12, "bold"), text_color="white")
         self.location_label.pack(side="left")
-        self.location_value = CTkLabel(self.row_location, text=location, font=("Roboto", 12, "bold"))
+        self.location_value = CTkLabel(self.row_location, text=location, font=("Roboto", 12, "bold"), text_color="white")
         self.location_value.pack(side="left", padx=10)
 
         self.row_project_id = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_project_id.pack(fill="x", padx=10, pady=2)
-        self.project_id_label = CTkLabel(self.row_project_id, text="PROJECT ID:", font=("Roboto", 12, "bold"))
+        self.project_id_label = CTkLabel(self.row_project_id, text="PROJECT ID:", font=("Roboto", 12, "bold"), text_color="white")
         self.project_id_label.pack(side="left")
-        self.project_id_value = CTkLabel(self.row_project_id, text=project_id, font=("Roboto", 12, "bold"))
+        self.project_id_value = CTkLabel(self.row_project_id, text=project_id, font=("Roboto", 12, "bold"), text_color="white")
         self.project_id_value.pack(side="left", padx=10)
 
         self.row_contractor = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_contractor.pack(fill="x", padx=10, pady=2)
-        self.contractor_label = CTkLabel(self.row_contractor, text="CONTRACTOR:", font=("Roboto", 12, "bold"))
+        self.contractor_label = CTkLabel(self.row_contractor, text="CONTRACTOR:", font=("Roboto", 12, "bold"), text_color="white")
         self.contractor_label.pack(side="left")
-        self.contractor_value = CTkLabel(self.row_contractor, text=contractor_name, font=("Roboto", 12, "bold"))
+        self.contractor_value = CTkLabel(self.row_contractor, text=contractor_name, font=("Roboto", 12, "bold"), text_color="white")
         self.contractor_value.pack(side="left", padx=10)
 
         self.row_project_type = CTkFrame(self.info_frame, fg_color="#11151f")
         self.row_project_type.pack(fill="x", padx=10, pady=2)
-        self.project_type_label = CTkLabel(self.row_project_type, text="PROJECT TYPE:", font=("Roboto", 12, "bold"))
+        self.project_type_label = CTkLabel(self.row_project_type, text="PROJECT TYPE:", font=("Roboto", 12, "bold"), text_color="white")
         self.project_type_label.pack(side="left")
-        self.project_type_value = CTkLabel(self.row_project_type, text=project_type, font=("Roboto", 12, "bold"))
+        self.project_type_value = CTkLabel(self.row_project_type, text=project_type, font=("Roboto", 12, "bold"), text_color="white")
         self.project_type_value.pack(side="left", padx=10)
 
-        # ─── Separate Frame for the Upload Excel Button ─────────────
+        # ─── Separate Frame for the Upload Excel and View Attachments Buttons ─────────────
         self.upload_frame = CTkFrame(self, corner_radius=10)
         self.upload_frame.pack(pady=10, padx=10, fill="x")
         self.upload_button = CTkButton(
@@ -197,11 +198,20 @@ class AdminWindow(CTk):
             command=self.upload_excel
         )
         self.upload_button.pack(side="left", padx=10, pady=5)
+        
+        # Updated "View Attachments" button command
+        self.view_button = CTkButton(
+            self.upload_frame,
+            text="View Attachments",
+            font=("Roboto", 12),
+            command=self.view_attachments
+        )
+        self.view_button.pack(side="left", padx=10, pady=5)
 
         # ─── Construction Items List Frame ──────────────────────────
         self.extra_frame = CTkFrame(self, corner_radius=10, fg_color="#11151f")
         self.extra_frame.pack(pady=10, padx=10, fill="both", expand=True)
-        self.extra_label = CTkLabel(self.extra_frame, text="List of Construction Items", font=("Roboto", 16, "bold"))
+        self.extra_label = CTkLabel(self.extra_frame, text="List of Construction Items", font=("Roboto", 16, "bold"), text_color="white")
         self.extra_label.pack(pady=10)
 
         self.table_container = tk.Frame(self.extra_frame, bd=2, relief="solid")
@@ -307,6 +317,112 @@ class AdminWindow(CTk):
             self.refresh_construction_items_table()
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
+
+    # Add this method to your class AdminWindow
+    def apply_date_filter(self, canvas_frame):
+        start_date = self.start_date_picker.get_date()
+        end_date = self.end_date_picker.get_date()
+
+        # Clear previous images
+        for widget in canvas_frame.winfo_children():
+            widget.destroy()
+
+        query = """
+            SELECT image_before, image_during, image_after, upload_date
+            FROM completed_construction_images
+            WHERE upload_date BETWEEN ? AND ?
+        """
+
+        rows = self._run_query(query, (start_date, end_date), fetchall=True)
+
+        if not rows:
+            info_label = CTkLabel(canvas_frame, text="No images found in the selected date range.", font=("Roboto", 12), text_color="white")
+            info_label.pack(pady=20)
+        else:
+            for row in rows:
+                image_before_path, image_during_path, image_after_path, date_taken = row
+
+                image_frame = CTkFrame(canvas_frame, fg_color="#222222", corner_radius=5)
+                image_frame.pack(pady=10, padx=10, fill="x")
+
+                date_label = CTkLabel(image_frame, text=f"Date: {date_taken}", font=("Roboto", 12, "bold"), text_color="white")
+                date_label.pack(pady=5)
+
+                for label_text, img_path in zip(["Before", "During", "After"], [image_before_path, image_during_path, image_after_path]):
+                    sub_frame = CTkFrame(image_frame, fg_color="#333333", corner_radius=5)
+                    sub_frame.pack(side="left", padx=10, pady=10)
+
+                    title_label = CTkLabel(sub_frame, text=label_text, font=("Roboto", 12, "bold"), text_color="white")
+                    title_label.pack(pady=5)
+
+                    if os.path.exists(img_path):
+                        try:
+                            pil_image = Image.open(img_path)
+                            pil_image.thumbnail((400, 300))
+                            photo = ImageTk.PhotoImage(pil_image)
+                            image_label = tk.Label(sub_frame, image=photo, bg="#333333")
+                            image_label.image = photo
+                            image_label.pack(padx=5, pady=5)
+                            self.image_refs.append(photo)
+                        except Exception as e:
+                            error_label = CTkLabel(sub_frame, text=f"Error loading image:\n{e}", font=("Roboto", 10), text_color="red")
+                            error_label.pack(padx=5, pady=5)
+                    else:
+                        missing_label = CTkLabel(sub_frame, text="File not found", font=("Roboto", 10), text_color="red")
+                        missing_label.pack(padx=5, pady=5)
+
+    # Modify the view_attachments method as follows:
+    def view_attachments(self):
+        self.attachments_window = tk.Toplevel()
+        self.attachments_window.title("Attachments")
+        self.attachments_window.geometry("1600x800")
+        self.attachments_window.resizable(False, False)
+        self.attachments_window.configure(bg="#11151f")
+        self.attachments_window.protocol("WM_DELETE_WINDOW", self.attachments_window.destroy)
+        self.attachments_window.grab_set()
+
+        self.attachments_window.update_idletasks()
+        width, height = 1600, 800
+        x = (self.attachments_window.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.attachments_window.winfo_screenheight() // 2) - (height // 2)
+        self.attachments_window.geometry(f"{width}x{height}+{x}+{y}")
+
+        date_frame = CTkFrame(self.attachments_window, fg_color="#222222")
+        date_frame.pack(fill="x", padx=20, pady=10)
+
+        date_range_label = CTkLabel(date_frame, text="Filter by Date Range:", font=("Roboto", 12), text_color="white")
+        date_range_label.pack(side="left", padx=10)
+
+        start_date_label = CTkLabel(date_frame, text="From:", font=("Roboto", 12), text_color="white")
+        start_date_label.pack(side="left", padx=5)
+        self.start_date_picker = DateEntry(date_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        self.start_date_picker.pack(side="left", padx=5)
+
+        end_date_label = CTkLabel(date_frame, text="To:", font=("Roboto", 12), text_color="white")
+        end_date_label.pack(side="left", padx=5)
+        self.end_date_picker = DateEntry(date_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        self.end_date_picker.pack(side="left", padx=5)
+
+        attachments_frame = CTkFrame(self.attachments_window, fg_color="#11151f")
+        attachments_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        canvas = tk.Canvas(attachments_frame, bg="#11151f", highlightthickness=0)
+        scrollbar = tk.Scrollbar(attachments_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = CTkFrame(canvas, fg_color="#11151f")
+
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        filter_button = CTkButton(date_frame, text="Apply Filter", font=("Roboto", 12), command=lambda: self.apply_date_filter(scrollable_frame))
+        filter_button.pack(side="left", padx=10)
+
+        close_button = CTkButton(self.attachments_window, text="Close", font=("Roboto", 12), command=self.attachments_window.destroy)
+        close_button.pack(pady=10)
+
+        self.attachments_window.focus_force()
 
     # ─── PROJECT DETAILS EDITING ─────────────────────────────────────────
     def enable_editing(self):
@@ -428,7 +544,7 @@ class AdminWindow(CTk):
         self.project_type_value.pack(side="left", padx=10)
         self.edit_button.pack(side="right", padx=10, pady=5)
 
-    # ─── WINDOW HANDLING ────────────────────────────────────────────────
+    # ─── WINDOW HANDLING ───────────────────────────────────────────────
     def on_close(self):
         self.logout()
 

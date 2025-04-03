@@ -5,9 +5,11 @@ from tkinter import messagebox, filedialog
 from customtkinter import CTk, CTkButton, CTkFrame, CTkLabel, CTkEntry, CTkComboBox
 from tkcalendar import DateEntry  # New import for date picker
 from PIL import Image, ImageTk  # Import Pillow for image handling
+from datetime import datetime
 import sys
 import os
 import pandas as pd
+import zipfile
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for PyInstaller and development"""
@@ -318,7 +320,7 @@ class AdminWindow(CTk):
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
 
-    # Add this method to your class AdminWindow
+    # ─── IMAGE FILTERING AND DOWNLOAD METHODS ─────────────────────────
     def apply_date_filter(self, canvas_frame):
         start_date = self.start_date_picker.get_date()
         end_date = self.end_date_picker.get_date()
@@ -371,7 +373,58 @@ class AdminWindow(CTk):
                         missing_label = CTkLabel(sub_frame, text="File not found", font=("Roboto", 10), text_color="red")
                         missing_label.pack(padx=5, pady=5)
 
-    # Modify the view_attachments method as follows:
+
+    def download_images_as_zip(self):
+        # Get date range from the date pickers
+        start_date = self.start_date_picker.get_date()
+        end_date = self.end_date_picker.get_date()
+
+        query = """
+            SELECT image_before, image_during, image_after, upload_date
+            FROM completed_construction_images
+            WHERE upload_date BETWEEN ? AND ?
+        """
+        rows = self._run_query(query, (start_date, end_date), fetchall=True)
+        
+        if not rows:
+            messagebox.showinfo("No Images", "No images found for the selected date range.")
+            return
+
+        # Ask the user where to save the zip file.
+        zip_file_path = filedialog.asksaveasfilename(
+            defaultextension=".zip",
+            filetypes=[("ZIP files", "*.zip")],
+            title="Save images as ZIP"
+        )
+        
+        if not zip_file_path:
+            return  # User cancelled the save dialog
+
+        try:
+            with zipfile.ZipFile(zip_file_path, 'w') as zipf:
+                # Iterate over each row of image paths
+                for row in rows:
+                    image_before_path, image_during_path, image_after_path, date_taken = row
+                    # Convert the upload_date into a folder name in the format "April 3, 2025"
+                    try:
+                        # Assumes date_taken is a string in the format YYYY-MM-DD; adjust if needed.
+                        formatted_date = datetime.strptime(str(date_taken), '%Y-%m-%d').strftime('%B %-d, %Y')
+                    except ValueError:
+                        # Fallback formatting if needed (e.g. Windows may not support %-d)
+                        formatted_date = datetime.strptime(str(date_taken), '%Y-%m-%d').strftime('%B %d, %Y')
+                    
+                    for img_path in [image_before_path, image_during_path, image_after_path]:
+                        if os.path.exists(img_path):
+                            # Place the image in the folder named after the formatted upload_date
+                            arcname = os.path.join(formatted_date, os.path.basename(img_path))
+                            zipf.write(img_path, arcname=arcname)
+                        else:
+                            print(f"Warning: {img_path} not found and will be skipped.")
+            messagebox.showinfo("Success", f"Images successfully saved to {zip_file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred while creating ZIP: {e}")
+
+    # ─── VIEW ATTACHMENTS WINDOW ────────────────────────────────────────
     def view_attachments(self):
         self.attachments_window = tk.Toplevel()
         self.attachments_window.title("Attachments")
@@ -402,6 +455,10 @@ class AdminWindow(CTk):
         end_date_label.pack(side="left", padx=5)
         self.end_date_picker = DateEntry(date_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
         self.end_date_picker.pack(side="left", padx=5)
+
+        # Add a download button to allow packaging the images as a ZIP file.
+        download_button = CTkButton(date_frame, text="Download Images as ZIP", font=("Roboto", 12), command=self.download_images_as_zip)
+        download_button.pack(side="left", padx=10)
 
         attachments_frame = CTkFrame(self.attachments_window, fg_color="#11151f")
         attachments_frame.pack(fill="both", expand=True, padx=20, pady=10)

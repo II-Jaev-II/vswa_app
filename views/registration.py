@@ -37,9 +37,9 @@ class RegistrationWindow(CTkToplevel):
     def create_widgets(self):
         # Load and display the image
         image_path = resource_path("images/prdp_logo.png")
-        image = CTkImage(dark_image=Image.open(image_path), size=(150, 150))
+        image = CTkImage(dark_image=Image.open(image_path), size=(200, 150))
         image_label = CTkLabel(master=self, image=image, text="")
-        image_label.place(relx=0.5, rely=0.3, anchor="center")
+        image_label.place(relx=0.5, rely=0.25, anchor="center")
 
         # Registration fields
         self.fullname_entry = CTkEntry(master=self, placeholder_text="Fullname", font=("Arial", 12), text_color="white", width=300)

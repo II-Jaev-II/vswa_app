@@ -48,6 +48,34 @@ class HomepageWindow(CTk):
         self.setup_window()
         self.create_widgets()
         
+    def get_last_upload_date(self, item_number, item_name):
+        try:
+            conn = sqlite3.connect(self.db_filename)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT MAX(upload_date)
+                FROM completed_construction_images
+                WHERE item_number = ? AND item_name = ?
+            """, (item_number, item_name))
+            result = cursor.fetchone()
+            if result and result[0]:
+                iso_date = result[0]
+                formatted_date = datetime.datetime.strptime(iso_date, "%Y-%m-%d").strftime("%B %d, %Y")
+                return formatted_date
+            return "N/A"
+        except Exception as e:
+            print(f"Error fetching last upload date: {e}")
+            return "N/A"
+        finally:
+            if conn:
+                conn.close()
+    
+    def refresh_table(self):
+        self.table_container.destroy()
+        self.table_container = tk.Frame(self.extra_frame, bd=2, relief="solid")
+        self.table_container.pack(padx=10, pady=10, fill="both", expand=True)
+        self.create_custom_table()
+        
     # ─── MOUSE WHEEL SCROLLING METHODS ───────────────────────────────
     def _bind_mousewheel(self, event):
         self.table_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
@@ -116,20 +144,19 @@ class HomepageWindow(CTk):
         self.table_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
         
-        # Bind mouse wheel events when the cursor is over the canvas
         self.table_canvas.bind("<Enter>", self._bind_mousewheel)
         self.table_canvas.bind("<Leave>", self._unbind_mousewheel)
 
-        # Update Headers for the table to match the new structure.
-        headers = ["Item Number", "Item Name", "Quantity", "Unit", "Actions"]
-        col_widths = [150, 400, 150, 100, 150]
+        # 🆕 Updated Headers
+        headers = ["Item Number", "Item Name", "Quantity", "Unit", "Last Attachments", "Actions"]
+        col_widths = [100, 400, 150, 100, 150, 150]
 
         header_frame = CTkFrame(self.scrollable_frame, fg_color="black")
         header_frame.grid(row=0, column=0, columnspan=len(headers), sticky="nsew", padx=1, pady=1)
 
         for col_index, (col_name, col_width) in enumerate(zip(headers, col_widths)):
             col_label = CTkLabel(header_frame, text=col_name, font=("Roboto", 12, "bold"), text_color="white",
-                                 width=col_width, height=30, fg_color="gray20")
+                                width=col_width, height=30, fg_color="gray20")
             col_label.grid(row=0, column=col_index, padx=1, pady=1, sticky="nsew")
 
         for col_index in range(len(headers)):
@@ -142,19 +169,26 @@ class HomepageWindow(CTk):
             row_frame = CTkFrame(self.scrollable_frame, fg_color="black")
             row_frame.grid(row=row_index, column=0, columnspan=len(headers), sticky="nsew", padx=1, pady=1)
 
-            # item: (item_number, item_name, quantity, unit)
-            for col_index, (value, col_width) in enumerate(zip(item, col_widths[:-1])):
+            # Unpack item info
+            item_number, item_name, quantity, unit = item
+
+            # Get last upload date for this item
+            last_date = self.get_last_upload_date(item_number, item_name)
+
+            # Fill in data columns
+            row_data = [item_number, item_name, quantity, unit, last_date]
+            for col_index, (value, col_width) in enumerate(zip(row_data, col_widths[:-1])):
                 cell_label = CTkLabel(row_frame, text=value, font=("Roboto", 12), text_color="white",
-                                      width=col_width, height=30, fg_color=bg_color)
+                                    width=col_width, height=30, fg_color=bg_color)
                 cell_label.grid(row=0, column=col_index, padx=1, pady=1, sticky="nsew")
 
-            item_number, item_name = item[0], item[1]
+            # Add action button
             add_image_button = CTkButton(
                 row_frame, text="Add / Update Image", font=("Roboto", 12),
                 command=lambda i=item_number, n=item_name: self.open_add_image_window(i, n),
                 width=col_widths[-1], height=30
             )
-            add_image_button.grid(row=0, column=4, padx=1, pady=1, sticky="nsew")
+            add_image_button.grid(row=0, column=len(col_widths) - 1, padx=1, pady=1, sticky="nsew")
 
     def open_add_image_window(self, item_number, item_name):
         # If an add image window is already open, bring it to the front.
@@ -520,6 +554,7 @@ class HomepageWindow(CTk):
                     dynamic_rows=self.dynamic_rows_entries
                 )
                 messagebox.showinfo("Success", "Images and station limits updated successfully!")
+                self.refresh_table()
                 self.on_add_image_window_close()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update images: {e}")

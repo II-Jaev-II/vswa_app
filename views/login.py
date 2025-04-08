@@ -40,9 +40,9 @@ class LoginApp(CTk):
         # Provide both light and dark images (using the same image here; change if needed)
         image = CTkImage(light_image=Image.open(image_path),
                          dark_image=Image.open(image_path),
-                         size=(150, 150))
+                         size=(200, 150))
         image_label = CTkLabel(master=self, image=image, text="")
-        image_label.place(relx=0.5, rely=0.3, anchor="center")
+        image_label.place(relx=0.5, rely=0.25, anchor="center")
         
         # Removed explicit text_color so the theme manages the text colors
         self.username_entry = CTkEntry(master=self, placeholder_text="Username", font=("Arial", 12), width=300)

@@ -422,13 +422,115 @@ class HomepageWindow(CTk):
                 add_new_dynamic_row(prepopulated_data=prepopulated_data)
         except Exception as e:
             print("Error loading dynamic rows:", e)
-
-        CTkButton(scrollable_frame, text="Add Row", width=150, command=add_new_dynamic_row).pack(pady=20)
+            
+        # right after `self.dynamic_rows_entries = []` add:
+        self.testing_rows = []
 
         # --------------------------------------------------
-        btn_frame = CTkFrame(scrollable_frame, corner_radius=10, fg_color="#2B2B2B")
-        btn_frame.pack(pady=20)
+        # Helpers for testing rows
 
+        def select_testing_images(testing_files_list, preview_button):
+            files = filedialog.askopenfilenames(
+                initialdir=os.getcwd(),
+                title="Select Testing Images",
+                filetypes=[("Image files", "*.png *.jpg *.jpeg *.jfif")]
+            )
+            if files:
+                testing_files_list.clear()
+                testing_files_list.extend(files)
+                preview_button.configure(state="normal")
+
+        def remove_testing_row(row_card, testing_dict):
+            row_card.destroy()
+            if testing_dict in self.testing_rows:
+                self.testing_rows.remove(testing_dict)
+
+        def add_testing_image_row():
+            row_card = CTkFrame(dynamic_container, corner_radius=10, fg_color="#3B3B3B")
+            row_card.pack(fill="x", padx=10, pady=10)
+
+            # name entry
+            name_entry = CTkEntry(row_card, width=200, placeholder_text="Testing Name")
+            name_entry.pack(side="left", padx=(10,5), pady=10)
+
+            testing_files = []
+
+            # 1) Preview button (disabled by default)
+            preview_btn = CTkButton(
+                row_card,
+                text="Preview Images",
+                width=120,
+                state="disabled",
+                command=lambda: preview_testing_images(testing_files)
+            )
+            preview_btn.pack(side="left", padx=5, pady=10)
+
+            # 2) Browse button
+            browse_btn = CTkButton(
+                row_card,
+                text="Browse Images",
+                width=100,
+                command=lambda: select_testing_images(testing_files, preview_btn)
+            )
+            browse_btn.pack(side="left", padx=5, pady=10)
+
+            # 3) Remove button
+            remove_btn = CTkButton(
+                row_card,
+                text="Remove",
+                width=60,
+                fg_color="red",
+                hover_color="darkred",
+                command=lambda: remove_testing_row(row_card, testing_dict)
+            )
+            remove_btn.pack(side="left", padx=5, pady=10)
+
+            testing_dict = {
+                "name_entry": name_entry,
+                "files": testing_files
+            }
+            self.testing_rows.append(testing_dict)
+            
+        def preview_testing_images(files):
+            if not files: return
+            win = tk.Toplevel(self.add_image_window)
+            win.title("Preview Testing Images")
+            win.geometry("800x600")
+
+            canvas = tk.Canvas(win, bg="#1C1C1C")
+            vsb    = tk.Scrollbar(win, orient="vertical", command=canvas.yview)
+            canvas.configure(yscrollcommand=vsb.set)
+            vsb.pack(side="right", fill="y")
+            canvas.pack(side="left", fill="both", expand=True)
+
+            frame = tk.Frame(canvas, bg="#1C1C1C")
+            canvas.create_window((0,0), window=frame, anchor="nw")
+            frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+            for idx, path in enumerate(files):
+                try:
+                    img = Image.open(path)
+                    img.thumbnail((200, 150))
+                    photo = ImageTk.PhotoImage(img)
+                    lbl = tk.Label(frame, image=photo, bg="#1C1C1C")
+                    lbl.image = photo
+                    lbl.grid(row=idx//3, column=idx%3, padx=5, pady=5)
+                except Exception as e:
+                    print(f"Cannot preview {path}: {e}")
+
+        def select_testing_images(testing_files_list, preview_button):
+            files = filedialog.askopenfilenames(
+                initialdir=os.getcwd(),
+                title="Select Testing Images",
+                filetypes=[("Image files", "*.png *.jpg *.jpeg *.jfif")]
+            )
+            if files:
+                testing_files_list.clear()
+                testing_files_list.extend(files)
+                preview_button.configure(state="normal")
+
+        # --------------------------------------------------
+        
         # Modified update function (removed construction_type)
         def update_all_uploaded_images(item_number, item_name, static_data, dynamic_rows):
             base_dir = os.path.join(os.getcwd(), "images")
@@ -559,14 +661,48 @@ class HomepageWindow(CTk):
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update images: {e}")
 
-        CTkButton(btn_frame, text="Submit", width=150, command=upload_images).pack(side="left", padx=20, pady=10)
-        CTkButton(btn_frame, text="Cancel", width=150, command=self.on_add_image_window_close).pack(side="left", padx=20, pady=10)
-        CTkButton(
-            btn_frame,
-            text="Generate Report",
-            width=150,
-            command=lambda: self.generate_report(item_number, item_name)
-        ).pack(side="left", padx=20, pady=10)
+        bottom_frame = CTkFrame(scrollable_frame, corner_radius=10, fg_color="#2B2B2B")
+        bottom_frame.pack(fill="x", padx=20, pady=20)
+
+        action_frame = CTkFrame(bottom_frame, corner_radius=10, fg_color="#2B2B2B")
+        action_frame.pack(side="left")
+
+        CTkButton(action_frame,
+                  text="Add Row",
+                  width=150,
+                  command=add_new_dynamic_row
+                 ).pack(side="left", padx=5, pady=5)
+
+        CTkButton(action_frame,
+                  text="Add Image for Testing",
+                  width=150,
+                  command=add_testing_image_row
+                 ).pack(side="left", padx=5, pady=5)
+        
+        btn_frame = CTkFrame(bottom_frame, corner_radius=10, fg_color="#2B2B2B")
+        btn_frame.pack(side="right")
+
+        CTkButton(btn_frame,
+                  text="Submit",
+                  width=150,
+                  command=upload_images,
+                  fg_color="#239409",
+                  hover_color="#1e7f0d",
+                 ).pack(side="left", padx=5, pady=5)
+
+        CTkButton(btn_frame,
+                  text="Cancel",
+                  width=150,
+                  fg_color="#b00505",
+                  hover_color="#8f0404",
+                  command=self.on_add_image_window_close
+                 ).pack(side="left", padx=5, pady=5)
+
+        CTkButton(btn_frame,
+                  text="Generate Report",
+                  width=150,
+                  command=lambda: self.generate_report(item_number, item_name)
+                 ).pack(side="left", padx=5, pady=5)
 
     def on_add_image_window_close(self):
         if self.add_image_window is not None:

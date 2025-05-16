@@ -14,6 +14,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from collections import defaultdict
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for PyInstaller and development"""
@@ -298,58 +299,50 @@ class HomepageWindow(CTk):
                 path_entry.pack(pady=(40, 10))
                 self.static_section_widgets[sec["key"]] = {"entry": path_entry}
 
-        # Load existing static data if available.
+        # Load static data
         try:
             conn = sqlite3.connect(self.db_filename)
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS completed_construction_images (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    construction_type TEXT,
-                    item_number TEXT,
-                    item_name TEXT,
-                    row_index INTEGER,
-                    image_before TEXT,
-                    image_during TEXT,
-                    image_after TEXT,
-                    station_limits TEXT,
-                    report_generated INTEGER DEFAULT 0
-                )
-            """)
-            cursor.execute("""
-                SELECT image_before, image_during, image_after, station_limits 
-                FROM completed_construction_images 
-                WHERE item_number=? AND item_name=? AND row_index=0
-            """, (item_number, item_name))
-            row = cursor.fetchone()
+            cur = conn.cursor()
+            cur.execute("""
+                            CREATE TABLE IF NOT EXISTS completed_construction_images (
+                                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                                construction_type  TEXT,
+                                item_number       TEXT,
+                                item_name         TEXT,
+                                row_index         INTEGER,
+                                image_before      TEXT,
+                                image_during      TEXT,
+                                image_after       TEXT,
+                                station_limits    TEXT,
+                                report_generated  INTEGER DEFAULT 0,
+                                upload_date       TEXT
+                            )
+                        """)
+            cur.execute(
+                "SELECT image_before,image_during,image_after,station_limits FROM completed_construction_images"
+                " WHERE item_number=? AND item_name=? AND row_index=0",(item_number,item_name)
+            )
+            row = cur.fetchone()
             conn.close()
             if row:
-                if row[0] and os.path.exists(row[0]):
-                    set_preview_pic(row[0], self.static_section_widgets["before"]["preview_label"],
-                                    self.static_section_widgets["before"]["entry"])
-                if row[1] and os.path.exists(row[1]):
-                    set_preview_pic(row[1], self.static_section_widgets["during"]["preview_label"],
-                                    self.static_section_widgets["during"]["entry"])
-                if row[2] and os.path.exists(row[2]):
-                    set_preview_pic(row[2], self.static_section_widgets["after"]["preview_label"],
-                                    self.static_section_widgets["after"]["entry"])
+                for idx,phase in enumerate(["before","during","after"]):
+                    path = row[idx]
+                    if path and os.path.exists(path):
+                        set_preview_pic(path,
+                            self.static_section_widgets[phase]["preview_label"],
+                            self.static_section_widgets[phase]["entry"]
+                        )
                 if row[3]:
-                    self.static_section_widgets["station_limits"]["entry"].delete(0, tk.END)
-                    self.static_section_widgets["station_limits"]["entry"].insert(0, row[3])
+                    e = self.static_section_widgets["station_limits"]["entry"]
+                    e.delete(0,tk.END); e.insert(0,row[3])
         except Exception as e:
-            print(f"Error fetching existing images: {e}")
+            print(e)
 
         # --------------------------------------------------
-        CTkLabel(
-            scrollable_frame,
-            text="Additional Image Entries",
-            font=("Roboto", 16, "bold"),
-            text_color="white"
-        ).pack(pady=20)
-
+        CTkLabel(scrollable_frame, text="Additional Image Entries",
+                 font=("Roboto",16,"bold"),text_color="white").pack(pady=20)
         dynamic_container = CTkFrame(scrollable_frame, corner_radius=10, fg_color="#2B2B2B")
         dynamic_container.pack(pady=10, fill="x", padx=10)
-
         self.dynamic_rows_entries = []
 
         def add_new_dynamic_row(prepopulated_data=None):
@@ -402,28 +395,22 @@ class HomepageWindow(CTk):
             if row_entries in self.dynamic_rows_entries:
                 self.dynamic_rows_entries.remove(row_entries)
 
+        # load saved construction rows
         try:
             conn = sqlite3.connect(self.db_filename)
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT image_before, image_during, image_after, station_limits 
-                FROM completed_construction_images 
-                WHERE item_number=? AND item_name=? AND row_index > 0
-            """, (item_number, item_name))
-            dynamic_rows_data = cursor.fetchall()
+            cur = conn.cursor()
+            cur.execute("SELECT image_before,image_during,image_after,station_limits"
+                        " FROM completed_construction_images"
+                        " WHERE item_number=? AND item_name=? AND row_index>0",
+                        (item_number,item_name))
+            for data in cur.fetchall():
+                pre = {"before":data[0],"during":data[1],"after":data[2],"station_limits":data[3]}
+                add_new_dynamic_row(pre)
             conn.close()
-            for data in dynamic_rows_data:
-                prepopulated_data = {
-                    "before": data[0],
-                    "during": data[1],
-                    "after": data[2],
-                    "station_limits": data[3]
-                }
-                add_new_dynamic_row(prepopulated_data=prepopulated_data)
-        except Exception as e:
-            print("Error loading dynamic rows:", e)
-            
-        # right after `self.dynamic_rows_entries = []` add:
+        except Exception:
+            pass
+
+        # Initialize testing rows list
         self.testing_rows = []
 
         # --------------------------------------------------
@@ -436,61 +423,16 @@ class HomepageWindow(CTk):
                 filetypes=[("Image files", "*.png *.jpg *.jpeg *.jfif")]
             )
             if files:
-                testing_files_list.clear()
-                testing_files_list.extend(files)
+                for f in files:
+                    if f not in testing_files_list:
+                        testing_files_list.append(f)
                 preview_button.configure(state="normal")
 
         def remove_testing_row(row_card, testing_dict):
             row_card.destroy()
             if testing_dict in self.testing_rows:
                 self.testing_rows.remove(testing_dict)
-
-        def add_testing_image_row():
-            row_card = CTkFrame(dynamic_container, corner_radius=10, fg_color="#3B3B3B")
-            row_card.pack(fill="x", padx=10, pady=10)
-
-            # name entry
-            name_entry = CTkEntry(row_card, width=200, placeholder_text="Testing Name")
-            name_entry.pack(side="left", padx=(10,5), pady=10)
-
-            testing_files = []
-
-            # 1) Preview button (disabled by default)
-            preview_btn = CTkButton(
-                row_card,
-                text="Preview Images",
-                width=120,
-                state="disabled",
-                command=lambda: preview_testing_images(testing_files)
-            )
-            preview_btn.pack(side="left", padx=5, pady=10)
-
-            # 2) Browse button
-            browse_btn = CTkButton(
-                row_card,
-                text="Browse Images",
-                width=100,
-                command=lambda: select_testing_images(testing_files, preview_btn)
-            )
-            browse_btn.pack(side="left", padx=5, pady=10)
-
-            # 3) Remove button
-            remove_btn = CTkButton(
-                row_card,
-                text="Remove",
-                width=60,
-                fg_color="red",
-                hover_color="darkred",
-                command=lambda: remove_testing_row(row_card, testing_dict)
-            )
-            remove_btn.pack(side="left", padx=5, pady=10)
-
-            testing_dict = {
-                "name_entry": name_entry,
-                "files": testing_files
-            }
-            self.testing_rows.append(testing_dict)
-            
+        
         def preview_testing_images(files):
             if not files: return
             win = tk.Toplevel(self.add_image_window)
@@ -518,119 +460,225 @@ class HomepageWindow(CTk):
                 except Exception as e:
                     print(f"Cannot preview {path}: {e}")
 
-        def select_testing_images(testing_files_list, preview_button):
-            files = filedialog.askopenfilenames(
-                initialdir=os.getcwd(),
-                title="Select Testing Images",
-                filetypes=[("Image files", "*.png *.jpg *.jpeg *.jfif")]
+        def add_testing_image_row(prepopulated_name=None, prepopulated_files=None):
+            row_card = CTkFrame(dynamic_container, corner_radius=10, fg_color="#3B3B3B")
+            row_card.pack(fill="x", padx=10, pady=10)
+
+            # Name entry
+            name_entry = CTkEntry(row_card, width=200, placeholder_text="Testing Name")
+            name_entry.pack(side="left", padx=(10,5), pady=10)
+            if prepopulated_name:
+                name_entry.insert(0, prepopulated_name)
+
+            # File list & preview button
+            files = list(prepopulated_files) if prepopulated_files else []
+            preview_btn = CTkButton(
+                row_card, text="Preview Images", width=120,
+                state="normal" if files else "disabled",
+                command=lambda: preview_testing_images(files)
             )
-            if files:
-                testing_files_list.clear()
-                testing_files_list.extend(files)
-                preview_button.configure(state="normal")
+            preview_btn.pack(side="left", padx=5, pady=10)
+
+            # Browse
+            CTkButton(
+                row_card, text="Browse Images", width=100,
+                command=lambda: select_testing_images(files, preview_btn)
+            ).pack(side="left", padx=5, pady=10)
+
+            # Remove
+            remove_btn = CTkButton(
+                row_card, text="Remove", width=60, fg_color="red", hover_color="darkred",
+                command=lambda: remove_testing_row(row_card, testing_dict)
+            )
+            remove_btn.pack(side="left", padx=5, pady=10)
+
+            testing_dict = {"name_entry": name_entry, "files": files}
+            self.testing_rows.append(testing_dict)
 
         # --------------------------------------------------
         
-        # Modified update function (removed construction_type)
         def update_all_uploaded_images(item_number, item_name, static_data, dynamic_rows):
             base_dir = os.path.join(os.getcwd(), "images")
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
+
+            # --- ensure tables exist ---
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS completed_construction_images (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    construction_type TEXT,
-                    item_number TEXT,
-                    item_name TEXT,
-                    row_index INTEGER,
-                    image_before TEXT,
-                    image_during TEXT,
-                    image_after TEXT,
-                    station_limits TEXT,
-                    report_generated INTEGER DEFAULT 0,
-                    upload_date TEXT
-                )
-            """)
+            CREATE TABLE IF NOT EXISTS completed_construction_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                construction_type TEXT,
+                item_number TEXT,
+                item_name TEXT,
+                row_index INTEGER,
+                image_before TEXT,
+                image_during TEXT,
+                image_after TEXT,
+                station_limits TEXT,
+                report_generated INTEGER DEFAULT 0,
+                upload_date TEXT
+            )""")
             cursor.execute("""
-                SELECT row_index, image_before, image_during, image_after, station_limits, report_generated
-                FROM completed_construction_images 
-                WHERE item_number=? AND item_name=?
+            CREATE TABLE IF NOT EXISTS testing_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_number TEXT,
+                item_name TEXT,
+                test_index INTEGER,
+                test_name TEXT,
+                image_path TEXT,
+                upload_date TEXT
+            )""")
+
+            # --- pull existing rows (so we can compare and delete replaced files) ---
+            cursor.execute("""
+            SELECT row_index, image_before, image_during, image_after, station_limits, report_generated
+            FROM completed_construction_images
+            WHERE item_number=? AND item_name=?
             """, (item_number, item_name))
-            existing_rows = cursor.fetchall()
-            existing_dict = {}
-            for row in existing_rows:
-                existing_dict[row[0]] = row[1:]  # (image_before, image_during, image_after, station_limits, report_generated)
-
-            def process_file(new_file, phase):
-                if new_file:
-                    target_dir = os.path.join(os.getcwd(), "images", phase.lower())
-                    abs_target_dir = os.path.abspath(target_dir)
-                    abs_new_file = os.path.abspath(new_file)
-                    if abs_new_file.startswith(abs_target_dir):
-                        return new_file
-                    if not os.path.exists(new_file):
-                        raise FileNotFoundError(f"Source file not found: {new_file}")
-                    os.makedirs(target_dir, exist_ok=True)
-                    original_filename = os.path.basename(new_file)
-                    unique_filename = f"{os.path.splitext(original_filename)[0]}_{uuid.uuid4().hex}{os.path.splitext(original_filename)[1]}"
-                    target_path = os.path.join(target_dir, unique_filename)
-                    shutil.copy(new_file, target_path)
-                    return target_path
-                return None
-
-            static_saved = {}
-            for phase in ["before", "during", "after"]:
-                file_path = static_data.get(phase, "")
-                static_saved[phase] = process_file(file_path, phase) if file_path else None
-            static_saved["station_limits"] = static_data.get("station_limits", "")
-            new_saved_paths = {}
-            new_saved_paths["0"] = static_saved
-
-            row_index = 1
-            for row_entries in self.dynamic_rows_entries:
-                row_saved = {}
-                for phase in ["before", "during", "after"]:
-                    file_path = row_entries[phase].get().strip()
-                    row_saved[phase] = process_file(file_path, phase) if file_path else None
-                file_path = row_entries["station_limits"].get().strip()
-                row_saved["station_limits"] = file_path if file_path else ""
-                new_saved_paths[str(row_index)] = row_saved
-                row_index += 1
-
+            existing = {
+                r[0]: (r[1], r[2], r[3], r[4], r[5])
+                for r in cursor.fetchall()
+            }
+            # --- pull existing testing-image paths ---
             cursor.execute("""
-                DELETE FROM completed_construction_images 
-                WHERE item_number=? AND item_name=?
+            SELECT image_path
+            FROM testing_images
+            WHERE item_number=? AND item_name=?
             """, (item_number, item_name))
-            
-            # Get today's date as a string in ISO format (YYYY-MM-DD)
+            old_testing_paths = [r[0] for r in cursor.fetchall()]
+
+            # --- wipe old records ---
+            cursor.execute("DELETE FROM completed_construction_images WHERE item_number=? AND item_name=?",
+                        (item_number, item_name))
+            cursor.execute("DELETE FROM testing_images WHERE item_number=? AND item_name=?",
+                        (item_number, item_name))
+
             today = datetime.date.today().isoformat()
-            
-            new_data = (new_saved_paths["0"]["before"], new_saved_paths["0"]["during"], new_saved_paths["0"]["after"], new_saved_paths["0"]["station_limits"])
-            if 0 in existing_dict and existing_dict[0][:4] == new_data:
-                report_flag = existing_dict[0][4]
-            else:
-                report_flag = 0
-            cursor.execute("""
-                INSERT INTO completed_construction_images 
-                (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits, report_generated, upload_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, ("", item_number, item_name, 0,
-                new_saved_paths["0"]["before"], new_saved_paths["0"]["during"], new_saved_paths["0"]["after"],
-                new_saved_paths["0"]["station_limits"], report_flag, today))
 
-            for i in range(1, row_index):
-                row_data = new_saved_paths[str(i)]
-                new_data = (row_data["before"], row_data["during"], row_data["after"], row_data["station_limits"])
-                if i in existing_dict and existing_dict[i][:4] == new_data:
-                    report_flag = existing_dict[i][4]
-                else:
-                    report_flag = 0
+            def copy_new_file(src, phase):
+                """Copy src into base_dir/phase, with a uuid suffix."""
+                tgt_dir = os.path.join(base_dir, phase)
+                os.makedirs(tgt_dir, exist_ok=True)
+                name = os.path.basename(src)
+                uniq = f"{os.path.splitext(name)[0]}_{uuid.uuid4().hex}{os.path.splitext(name)[1]}"
+                dst = os.path.join(tgt_dir, uniq)
+                shutil.copy(src, dst)
+                return dst
+
+            def handle_image(src, old_path, phase):
+                """
+                If src is already in our images folder, reuse; 
+                else copy new and delete old_path if it existed.
+                """
+                if not src:
+                    return None
+
+                abs_src = os.path.abspath(src)
+                abs_base = os.path.abspath(base_dir)
+
+                # 1) reused
+                if abs_src.startswith(abs_base) and os.path.exists(abs_src):
+                    return abs_src
+
+                # 2) brand new
+                new_path = copy_new_file(src, phase)
+
+                # 3) clean up old file if it's different
+                if old_path and old_path != new_path and os.path.exists(old_path):
+                    os.remove(old_path)
+
+                return new_path
+
+            # --- static row (row_index=0) ---
+            old0 = existing.get(0, (None, None, None, None, 0))
+            new0 = {}
+            for i, phase in enumerate(("before", "during", "after")):
+                new0[phase] = handle_image(
+                    static_data.get(phase),
+                    old0[i],
+                    phase
+                )
+            new0["station_limits"] = static_data.get("station_limits", "")
+            
+            # … after computing new0 …
+            report_flag = old0[4] if (
+                old0[:4] == (
+                    new0["before"],
+                    new0["during"],
+                    new0["after"],
+                    new0["station_limits"]
+                )
+            ) else 0
+
+            # --- insert static row ---
+            cursor.execute("""
+            INSERT INTO completed_construction_images
+                (item_number, item_name, row_index,
+                image_before, image_during, image_after, station_limits,
+                report_generated, upload_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+            item_number, 
+            item_name, 
+            0,
+            new0["before"], 
+            new0["during"], 
+            new0["after"],
+            new0["station_limits"],
+            report_flag,
+            today
+            ))
+
+            # --- dynamic rows (row_index 1..) ---
+            for idx, row in enumerate(dynamic_rows, start=1):
+                oldr = existing.get(idx, (None, None, None, None, 0))
+                newr = {}
+                for i, phase in enumerate(("before", "during", "after")):
+                    val = row[phase].get().strip()
+                    newr[phase] = handle_image(val, oldr[i], phase)
+                newr["station_limits"] = row["station_limits"].get().strip()
+                flag = oldr[4] if oldr[:4] == (
+                    newr["before"],
+                    newr["during"],
+                    newr["after"],
+                    newr["station_limits"]
+                ) else 0
+
                 cursor.execute("""
-                    INSERT INTO completed_construction_images 
-                    (construction_type, item_number, item_name, row_index, image_before, image_during, image_after, station_limits, report_generated, upload_date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, ("", item_number, item_name, i,
-                    row_data["before"], row_data["during"], row_data["after"], row_data["station_limits"], report_flag, today))
+                INSERT INTO completed_construction_images
+                    (item_number, item_name, row_index,
+                    image_before, image_during, image_after, station_limits,
+                    report_generated, upload_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                item_number,
+                item_name,
+                idx,
+                newr["before"],
+                newr["during"],
+                newr["after"],
+                newr["station_limits"],
+                flag,
+                today
+                ))
+
+            # --- testing rows ---
+            new_testing_paths = []
+            for t_idx, testing in enumerate(self.testing_rows, start=1):
+                name = testing["name_entry"].get().strip()
+                for fp in testing["files"]:
+                    tp = handle_image(fp, None, "testing")
+                    new_testing_paths.append(tp)
+                    cursor.execute("""
+                    INSERT INTO testing_images
+                        (item_number, item_name, test_index, test_name, image_path, upload_date)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, (item_number, item_name, t_idx, name, tp, today))
+
+            # --- delete any old testing-image files the user didn’t re-upload ---
+            for old_fp in old_testing_paths:
+                if old_fp not in new_testing_paths and os.path.exists(old_fp):
+                    os.remove(old_fp)
+
             conn.commit()
             conn.close()
 
@@ -660,49 +708,49 @@ class HomepageWindow(CTk):
                 self.on_add_image_window_close()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update images: {e}")
+                
+        # --- Load saved testing rows ---
+        try:
+            conn = sqlite3.connect(self.db_filename)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT test_index,test_name,image_path FROM testing_images"
+                " WHERE item_number=? AND item_name=? ORDER BY test_index,id",
+                (item_number, item_name)
+            )
+            grouped = defaultdict(lambda: {"name":None, "files":[]})
+            for idx,name,path in cur.fetchall():
+                grouped[idx]["name"] = name
+                grouped[idx]["files"].append(path)
+            conn.close()
+            for idx in sorted(grouped):
+                add_testing_image_row(
+                    prepopulated_name=grouped[idx]["name"],
+                    prepopulated_files=grouped[idx]["files"]
+                )
+        except Exception as e:
+            print(e)
 
+        # --- Bottom controls ---
         bottom_frame = CTkFrame(scrollable_frame, corner_radius=10, fg_color="#2B2B2B")
         bottom_frame.pack(fill="x", padx=20, pady=20)
-
         action_frame = CTkFrame(bottom_frame, corner_radius=10, fg_color="#2B2B2B")
         action_frame.pack(side="left")
+        CTkButton(action_frame, text="Add Row", width=150,
+                  command=add_new_dynamic_row).pack(side="left", padx=5, pady=5)
+        CTkButton(action_frame, text="Add Image for Testing", width=150,
+                  command=add_testing_image_row).pack(side="left", padx=5, pady=5)
 
-        CTkButton(action_frame,
-                  text="Add Row",
-                  width=150,
-                  command=add_new_dynamic_row
-                 ).pack(side="left", padx=5, pady=5)
-
-        CTkButton(action_frame,
-                  text="Add Image for Testing",
-                  width=150,
-                  command=add_testing_image_row
-                 ).pack(side="left", padx=5, pady=5)
-        
         btn_frame = CTkFrame(bottom_frame, corner_radius=10, fg_color="#2B2B2B")
         btn_frame.pack(side="right")
-
-        CTkButton(btn_frame,
-                  text="Submit",
-                  width=150,
-                  command=upload_images,
-                  fg_color="#239409",
-                  hover_color="#1e7f0d",
-                 ).pack(side="left", padx=5, pady=5)
-
-        CTkButton(btn_frame,
-                  text="Cancel",
-                  width=150,
-                  fg_color="#b00505",
-                  hover_color="#8f0404",
-                  command=self.on_add_image_window_close
-                 ).pack(side="left", padx=5, pady=5)
-
-        CTkButton(btn_frame,
-                  text="Generate Report",
-                  width=150,
-                  command=lambda: self.generate_report(item_number, item_name)
-                 ).pack(side="left", padx=5, pady=5)
+        CTkButton(btn_frame, text="Submit", width=150,
+                    command=upload_images, fg_color="#239409", 
+                    hover_color="#1e7f0d").pack(side="left", padx=5)
+        CTkButton(btn_frame, text="Cancel", width=150,
+                  fg_color="#b00505", hover_color="#8f0404",
+                  command=self.on_add_image_window_close).pack(side="left", padx=5)
+        CTkButton(btn_frame, text="Generate Report", width=150,
+                  command=lambda: self.generate_report(item_number, item_name)).pack(side="left", padx=5)
 
     def on_add_image_window_close(self):
         if self.add_image_window is not None:
@@ -746,184 +794,166 @@ class HomepageWindow(CTk):
 
     def generate_report(self, item_number, item_name):
         """
-        Generate a Word document report for the given construction item.
-        Both the static row (row_index=0) and dynamic rows (row_index>0) that haven't been reported (report_generated=0)
-        are combined into a list. For each row, the project information is printed at the top of the page.
-        After report generation, the corresponding rows are marked as reported.
+        Generate a single Word document report combining construction images (before/during/after/station limits)
+        and materials testing images for a given item.
         """
+        # Connect and fetch data
         try:
             conn = sqlite3.connect(self.db_filename)
             cursor = conn.cursor()
-            # Fetch static row if not yet reported.
-            cursor.execute("""
-                SELECT image_before, image_during, image_after, station_limits, report_generated
-                FROM completed_construction_images
-                WHERE item_number=? AND item_name=? AND row_index=0 AND report_generated=0
-            """, (item_number, item_name))
+            # Static row
+            cursor.execute(
+                "SELECT image_before, image_during, image_after, station_limits, report_generated"
+                " FROM completed_construction_images"
+                " WHERE item_number=? AND item_name=? AND row_index=0",
+                (item_number, item_name)
+            )
             static_row = cursor.fetchone()
-            
-            # Fetch dynamic rows not yet reported.
-            cursor.execute("""
-                SELECT row_index, image_before, image_during, image_after, station_limits, report_generated
-                FROM completed_construction_images
-                WHERE item_number=? AND item_name=? AND row_index > 0 AND report_generated=0
-            """, (item_number, item_name))
+            # Dynamic rows
+            cursor.execute(
+                "SELECT row_index, image_before, image_during, image_after, station_limits, report_generated"
+                " FROM completed_construction_images"
+                " WHERE item_number=? AND item_name=? AND row_index>0",
+                (item_number, item_name)
+            )
             dynamic_rows = cursor.fetchall()
-            
-            if not static_row and not dynamic_rows:
-                messagebox.showinfo("No New Data", "No new attachments to generate report.")
-                return
-
-            # Fetch project information.
-            cursor.execute("""
-                SELECT project_id, project_name, location, contractor_name
-                FROM project_informations
-            """)
-            project_row = cursor.fetchone()
-            if project_row:
-                (project_id, project_name, location, contractor_name) = project_row
-            else:
-                messagebox.showerror("Error", "No project information found.")
-                return
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to fetch image data: {e}")
-            return
-        finally:
+            # Testing rows
+            cursor.execute(
+                "SELECT test_name, image_path FROM testing_images"
+                " WHERE item_number=? AND item_name=?"
+                " ORDER BY test_index, id",
+                (item_number, item_name)
+            )
+            testing_rows = cursor.fetchall()
+            # Project info
+            cursor.execute(
+                "SELECT project_id, project_name, location, contractor_name"
+                " FROM project_informations LIMIT 1"
+            )
+            proj = cursor.fetchone()
             conn.close()
+            if not proj:
+                messagebox.showerror("Error", "Project information not found.")
+                return
+            project_id, project_name, location, contractor_name = proj
+        except Exception as e:
+            messagebox.showerror("Error", f"Data fetch failed: {e}")
+            return
 
-        combined_rows = []
-        if static_row:
-            combined_rows.append(static_row)
-        combined_rows.extend(dynamic_rows)
-
+        # Build document
         document = Document()
         document.styles['Normal'].paragraph_format.space_after = Pt(0)
-        
-        for section in document.sections:
-            section.top_margin = Cm(1.27)
-            section.bottom_margin = Cm(1.27)
-            section.left_margin = Cm(1.27)
-            section.right_margin = Cm(1.27)
-
-        # --- Add header with logos and centered text (global header) ---
+        for sec in document.sections:
+            sec.top_margin = Cm(1.27)
+            sec.bottom_margin = Cm(1.27)
+            sec.left_margin = Cm(1.27)
+            sec.right_margin = Cm(1.27)
+        # Header (logos/text)
         section = document.sections[0]
         header = section.header
-        available_width = section.page_width - section.left_margin - section.right_margin
+        width = section.page_width - section.left_margin - section.right_margin
+        tbl = header.add_table(rows=1, cols=3, width=width)
+        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        c0, c1, c2 = tbl.rows[0].cells
+        set_cell_width(c0, 2000); set_cell_width(c1, 8000); set_cell_width(c2, 2000)
+        # Left logo
+        left_logo = resource_path("images/prdp_logo.png")
+        p0 = c0.paragraphs[0]; p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        if os.path.exists(left_logo): p0.add_run().add_picture(left_logo, width=Inches(1))
+        else: p0.add_run("Left Logo")
+        # Center text
+        p1 = c1.paragraphs[0]; p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p1.add_run("Republic of the Philippines\n"); run = p1.add_run("PHILIPPINE RURAL DEVELOPMENT PROJECT\n"); run.bold=True
+        p1.add_run("(Input Province Name)\n"); run2=p1.add_run("(Input Municipality Name)"); run2.bold=True
+        # Right logo placeholder
+        nested = c2.add_table(rows=1, cols=1); nc = nested.cell(0,0)
+        p2 = nc.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p2.add_run("Insert Municipality Logo")
 
-        header_table = header.add_table(rows=1, cols=3, width=available_width)
-        header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-        left_cell = header_table.cell(0, 0)
-        center_cell = header_table.cell(0, 1)
-        right_cell = header_table.cell(0, 2)
-
-        set_cell_width(left_cell, 2000)
-        set_cell_width(center_cell, 8000)
-        set_cell_width(right_cell, 2000)
-        
-        left_logo_path = resource_path("images/prdp_logo.png")
-        
-        p_left = left_cell.paragraphs[0]
-        p_left.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        if os.path.exists(left_logo_path):
-            p_left.add_run().add_picture(left_logo_path, width=Inches(1))
-        else:
-            p_left.add_run("Left Logo")
-        
-        p_center = center_cell.paragraphs[0]
-        p_center.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_center.add_run("Republic of the Philippines\n")
-        run = p_center.add_run("PHILIPPINE RURAL DEVELOPMENT PROJECT\n")
-        run.bold = True
-        p_center.add_run("(Input Province Name)\n")
-        run = p_center.add_run("(Input Municipality Name)")
-        run.bold = True
-        
-        right_cell.text = ""
-        nested_table = right_cell.add_table(rows=1, cols=1)
-        nested_table.style = 'Table Grid'
-        nested_cell = nested_table.cell(0, 0)
-        p_box = nested_cell.paragraphs[0]
-        p_box.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_box.add_run("Insert Municipality Logo")
-
-        for idx, row in enumerate(combined_rows):
-            if idx > 0:
-                document.add_page_break()
-                
+        # Combine rows
+        rows = []
+        if static_row: rows.append((0, *static_row))
+        rows.extend(dynamic_rows)
+        # Add construction images section
+        for idx, row in enumerate(rows):
+            if idx>0: document.add_page_break()
+            # Project header
+            for label, value in [
+                ("NAME OF PROJECT:", project_name),
+                ("LOCATION:", location),
+                ("PROJECT ID:", project_id),
+                ("CONTRACTOR:", contractor_name)
+            ]:
+                p = document.add_paragraph(); p.add_run(f"{label} ").bold=True; p.add_run(str(value))
             document.add_paragraph()
-            document.add_paragraph()
-                    
-            p = document.add_paragraph()
-            p.add_run("NAME OF PROJECT: ").bold = True
-            p.add_run(project_name).bold = True
-
-            p = document.add_paragraph()
-            p.add_run("LOCATION: ").bold = True
-            p.add_run(location).bold = True
-
-            p = document.add_paragraph()
-            p.add_run("PROJECT ID: ").bold = True
-            p.add_run(str(project_id)).bold = True
-
-            p = document.add_paragraph()
-            p.add_run("CONTRACTOR: ").bold = True
-            p.add_run(contractor_name).bold = True
-            
-            document.add_paragraph()
-
-            p = document.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.add_run(f'ITEM {str(item_number).upper()} {item_name.upper()}').bold = True
-
-            if len(row) == 5:
-                before_img, during_img, after_img, station_limits, _ = row
+            # Item title
+            p = document.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+            p.add_run(f"ITEM {item_number.upper()} {item_name.upper()}").bold=True
+            # Static vs dynamic unpack
+            if row[0]==0:
+                _, before_img, during_img, after_img, station_limits, _ = row
             else:
                 _, before_img, during_img, after_img, station_limits, _ = row
-
             if station_limits:
-                p_station = document.add_paragraph(f'STATION LIMIT: {station_limits}')
-                p_station.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-            for phase, img_path in zip(["BEFORE", "DURING", "AFTER"], [before_img, during_img, after_img]):
-                p_phase = document.add_paragraph(phase)
-                p_phase.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                if img_path and os.path.exists(img_path):
+                ps = document.add_paragraph(f"STATION LIMIT: {station_limits}"); ps.alignment=WD_ALIGN_PARAGRAPH.RIGHT
+            # Phases
+            for phase, img in zip(["BEFORE","DURING","AFTER"],[before_img,during_img,after_img]):
+                pph = document.add_paragraph(phase); pph.alignment=WD_ALIGN_PARAGRAPH.CENTER
+                if img and os.path.exists(img):
                     try:
-                        document.add_picture(img_path, width=Inches(4), height=Inches(2))
-                        last_paragraph = document.paragraphs[-1]
-                        last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    except Exception as e:
+                        document.add_picture(img, width=Inches(4), height=Inches(2)); last=document.paragraphs[-1]; last.alignment=WD_ALIGN_PARAGRAPH.CENTER
+                    except:
                         document.add_paragraph("Error adding image.")
                 else:
                     document.add_paragraph("No image available.")
 
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".docx",
-            filetypes=[("Word Documents", "*.docx")],
-            title="Save Report As"
-        )
-        if file_path:
+        # Add testing section if present
+        if testing_rows:
+            document.add_page_break()
+            from collections import defaultdict
+            grp = defaultdict(list)
+            for name, path in testing_rows: grp[name].append(path)
+            for t_idx, (test_name, paths) in enumerate(grp.items()):
+                if t_idx>0: document.add_page_break()
+                # Project header
+                for label, value in [
+                    ("NAME OF PROJECT:", project_name),
+                    ("LOCATION:", location),
+                    ("PROJECT ID:", project_id),
+                    ("CONTRACTOR:", contractor_name)
+                ]:
+                    p = document.add_paragraph(); p.add_run(f"{label} ").bold=True; p.add_run(str(value))
+                document.add_paragraph()
+                # Test title
+                pt = document.add_paragraph(); pt.alignment=WD_ALIGN_PARAGRAPH.CENTER
+                pt.add_run(f"{test_name.upper()}").bold=True
+                # Images
+                for img in paths:
+                    if img and os.path.exists(img):
+                        try:
+                            document.add_picture(img, width=Inches(4), height=Inches(3)); lp=document.paragraphs[-1]; lp.alignment=WD_ALIGN_PARAGRAPH.CENTER
+                        except:
+                            document.add_paragraph("Error adding image.")
+                    else:
+                        document.add_paragraph("No image available.")
+
+        # Save file
+        save_path = filedialog.asksaveasfilename(defaultextension=".docx",
+                        filetypes=[("Word Documents","*.docx")], title="Save Report As")
+        if save_path:
             try:
-                document.save(file_path)
-                messagebox.showinfo("Success", f"Report saved as {file_path}")
-                conn = sqlite3.connect(self.db_filename)
-                cursor = conn.cursor()
-                if static_row:
-                    cursor.execute("""
-                        UPDATE completed_construction_images
-                        SET report_generated=1
-                        WHERE item_number=? AND item_name=? AND row_index=0
-                    """, (item_number, item_name))
-                for row in dynamic_rows:
-                    row_index = row[0]
-                    cursor.execute("""
-                        UPDATE completed_construction_images
-                        SET report_generated=1
-                        WHERE item_number=? AND item_name=? AND row_index=?
-                    """, (item_number, item_name, row_index))
-                conn.commit()
-                conn.close()
+                document.save(save_path)
+                messagebox.showinfo("Success", f"Report saved as {save_path}")
+                # mark construction rows reported
+                conn = sqlite3.connect(self.db_filename); cur = conn.cursor()
+                if static_row and static_row[4]==0:
+                    cur.execute("UPDATE completed_construction_images SET report_generated=1 WHERE item_number=? AND item_name=? AND row_index=0",
+                                (item_number,item_name))
+                for dr in dynamic_rows:
+                    if dr[5]==0:
+                        cur.execute("UPDATE completed_construction_images SET report_generated=1 WHERE item_number=? AND item_name=? AND row_index=?",
+                                    (item_number,item_name,dr[0]))
+                conn.commit(); conn.close()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save document: {e}")
 

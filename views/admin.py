@@ -240,7 +240,10 @@ class AdminWindow(CTk):
     def upload_excel(self):
         file_path = filedialog.askopenfilename(
             title="Select Excel File",
-            filetypes=[("Excel files", "*.xlsx *.xls")]
+            filetypes=[
+            ("Excel files (.xlsx)", "*.xlsx"),
+            ("Excel files (.xls)",  "*.xls")
+            ]
         )
         if not file_path:
             return  # User cancelled
@@ -323,7 +326,7 @@ class AdminWindow(CTk):
     # ─── IMAGE FILTERING AND DOWNLOAD METHODS ─────────────────────────
     def apply_date_filter(self, canvas_frame):
         start_date = self.start_date_picker.get_date()
-        end_date   = self.end_date_picker.get_date()
+        end_date = self.end_date_picker.get_date()
 
         # Clear previous images
         for widget in canvas_frame.winfo_children():
@@ -352,7 +355,7 @@ class AdminWindow(CTk):
                     ).pack(pady=20)
             return
 
-        # ─── Display completed shots ─────────────────────
+        # Display completed shots
         for before, during, after, date_taken in comp_rows:
             frame = CTkFrame(canvas_frame, fg_color="#222222", corner_radius=5)
             frame.pack(pady=10, padx=10, fill="x")
@@ -360,10 +363,13 @@ class AdminWindow(CTk):
                      font=("Roboto", 12, "bold"), text_color="white"
                     ).pack(pady=5)
 
+            # Only show subframes for existing image paths
             for label_text, img_path in zip(
-                    ["Before","During","After"],
+                    ["Before", "During", "After"],
                     [before, during, after]
                 ):
+                if not img_path:
+                    continue
                 sub = CTkFrame(frame, fg_color="#333333", corner_radius=5)
                 sub.pack(side="left", padx=10, pady=10)
                 CTkLabel(sub, text=label_text,
@@ -387,7 +393,7 @@ class AdminWindow(CTk):
                              font=("Roboto",10), text_color="red"
                             ).pack(padx=5,pady=5)
 
-        # ─── Display testing materials ───────────────────
+        # Display testing materials
         if test_rows:
             CTkLabel(canvas_frame,
                      text="Testing Materials",
@@ -401,39 +407,38 @@ class AdminWindow(CTk):
                          font=("Roboto", 12, "bold"), text_color="white"
                         ).pack(pady=5)
 
-                sub = CTkFrame(frame, fg_color="#333333", corner_radius=5)
-                sub.pack(padx=10, pady=10)
-                if os.path.exists(img_path):
-                    try:
-                        img = Image.open(img_path)
-                        img.thumbnail((400,300))
-                        photo = ImageTk.PhotoImage(img)
-                        lbl = tk.Label(sub, image=photo, bg="#333333")
-                        lbl.image = photo
-                        lbl.pack(padx=5, pady=5)
-                        self.image_refs.append(photo)
-                    except Exception as e:
-                        CTkLabel(sub, text=f"Error: {e}",
+                if img_path:
+                    sub = CTkFrame(frame, fg_color="#333333", corner_radius=5)
+                    sub.pack(padx=10, pady=10)
+                    if os.path.exists(img_path):
+                        try:
+                            img = Image.open(img_path)
+                            img.thumbnail((400,300))
+                            photo = ImageTk.PhotoImage(img)
+                            lbl = tk.Label(sub, image=photo, bg="#333333")
+                            lbl.image = photo
+                            lbl.pack(padx=5, pady=5)
+                            self.image_refs.append(photo)
+                        except Exception as e:
+                            CTkLabel(sub, text=f"Error: {e}",
+                                     font=("Roboto",10), text_color="red"
+                                    ).pack(padx=5,pady=5)
+                    else:
+                        CTkLabel(sub, text="File not found",
                                  font=("Roboto",10), text_color="red"
                                 ).pack(padx=5,pady=5)
-                else:
-                    CTkLabel(sub, text="File not found",
-                             font=("Roboto",10), text_color="red"
-                            ).pack(padx=5,pady=5)
 
     def download_images_as_zip(self):
         start_date = self.start_date_picker.get_date()
-        end_date   = self.end_date_picker.get_date()
+        end_date = self.end_date_picker.get_date()
 
-        # 1) Completed construction images
-        comp_q  = """
+        comp_q = """
             SELECT image_before, image_during, image_after, upload_date
             FROM completed_construction_images
             WHERE upload_date BETWEEN ? AND ?
         """
         comp_rows = self._run_query(comp_q, (start_date, end_date), fetchall=True) or []
 
-        # 2) Testing materials
         test_q = """
             SELECT upload_date, test_name, image_path
             FROM testing_images
@@ -457,22 +462,23 @@ class AdminWindow(CTk):
             with zipfile.ZipFile(zip_path, 'w') as zipf:
 
                 def make_folder(dt):
-                    """Convert YYYY-MM-DD to 'Month D, YYYY'."""
                     try:
                         return datetime.strptime(str(dt), '%Y-%m-%d').strftime('%B %-d, %Y')
                     except ValueError:
                         return datetime.strptime(str(dt), '%Y-%m-%d').strftime('%B %d, %Y')
 
-                # ─── Add completed construction images ───────────────────
+                # Add completed construction images
                 for before, during, after, date_taken in comp_rows:
                     folder = make_folder(date_taken)
                     for img_path in (before, during, after):
-                        if os.path.exists(img_path):
+                        if img_path and os.path.exists(img_path):
                             arc = os.path.join(folder, os.path.basename(img_path))
                             zipf.write(img_path, arcname=arc)
 
-                # ─── Add testing materials under a separate subfolder ────
+                # Add testing materials
                 for date_taken, test_name, img_path in test_rows:
+                    if not img_path:
+                        continue
                     date_folder = make_folder(date_taken)
                     test_folder = os.path.join(date_folder, "Material Testing", test_name)
                     if os.path.exists(img_path):

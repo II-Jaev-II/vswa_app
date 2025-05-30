@@ -14,6 +14,9 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+set_appearance_mode("System")
+set_default_color_theme("blue")
+
 class RegistrationWindow(CTkToplevel):
     def __init__(self, master=None):
         super().__init__(master)
@@ -42,16 +45,16 @@ class RegistrationWindow(CTkToplevel):
         image_label.place(relx=0.5, rely=0.25, anchor="center")
 
         # Registration fields
-        self.fullname_entry = CTkEntry(master=self, placeholder_text="Fullname", font=("Arial", 12), text_color="white", width=300)
+        self.fullname_entry = CTkEntry(master=self, placeholder_text="Fullname", font=("Arial", 12), width=300)
         self.fullname_entry.place(relx=0.5, rely=0.5, anchor="center")
 
-        self.username_entry = CTkEntry(master=self, placeholder_text="Username", font=("Arial", 12), text_color="white", width=300)
+        self.username_entry = CTkEntry(master=self, placeholder_text="Username", font=("Arial", 12), width=300)
         self.username_entry.place(relx=0.5, rely=0.6, anchor="center")
 
-        self.password_entry = CTkEntry(master=self, placeholder_text="Password", font=("Arial", 12), text_color="white", width=300, show="*")
+        self.password_entry = CTkEntry(master=self, placeholder_text="Password", font=("Arial", 12), width=300, show="*")
         self.password_entry.place(relx=0.5, rely=0.7, anchor="center")
 
-        self.confirm_password_entry = CTkEntry(master=self, placeholder_text="Confirm Password", font=("Arial", 12), text_color="white", width=300, show="*")
+        self.confirm_password_entry = CTkEntry(master=self, placeholder_text="Confirm Password", font=("Arial", 12), width=300, show="*")
         self.confirm_password_entry.place(relx=0.5, rely=0.8, anchor="center")
 
         # Submit button

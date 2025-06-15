@@ -212,7 +212,7 @@ class HomepageWindow(CTk):
         self.add_image_window.geometry(f"{width}x{height}+{x}+{y}")
 
         scrollable_frame = CTkScrollableFrame(self.add_image_window, corner_radius=10, fg_color="#1C1C1C")
-        scrollable_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        scrollable_frame.pack(fill="both", expand=True, padx=20, pady=(20,0))
 
         CTkLabel(
             scrollable_frame,
@@ -732,25 +732,28 @@ class HomepageWindow(CTk):
             print(e)
 
         # --- Bottom controls ---
-        bottom_frame = CTkFrame(scrollable_frame, corner_radius=10, fg_color="#2B2B2B")
+        bottom_frame = CTkFrame(self.add_image_window, corner_radius=10, fg_color="#2B2B2B")
         bottom_frame.pack(fill="x", padx=20, pady=20)
+        
         action_frame = CTkFrame(bottom_frame, corner_radius=10, fg_color="#2B2B2B")
         action_frame.pack(side="left")
         CTkButton(action_frame, text="Add Row", width=150,
-                  command=add_new_dynamic_row).pack(side="left", padx=5, pady=5)
+                command=add_new_dynamic_row).pack(side="left", padx=5, pady=5)
         CTkButton(action_frame, text="Add Image for Testing", width=150,
-                  command=add_testing_image_row).pack(side="left", padx=5, pady=5)
+                command=add_testing_image_row).pack(side="left", padx=5, pady=5)
 
         btn_frame = CTkFrame(bottom_frame, corner_radius=10, fg_color="#2B2B2B")
         btn_frame.pack(side="right")
         CTkButton(btn_frame, text="Submit", width=150,
-                    command=upload_images, fg_color="#239409", 
-                    hover_color="#1e7f0d").pack(side="left", padx=5)
+                command=upload_images, fg_color="#239409", hover_color="#1e7f0d")\
+            .pack(side="left", padx=5)
         CTkButton(btn_frame, text="Cancel", width=150,
-                  fg_color="#b00505", hover_color="#8f0404",
-                  command=self.on_add_image_window_close).pack(side="left", padx=5)
+                fg_color="#b00505", hover_color="#8f0404",
+                command=self.on_add_image_window_close)\
+            .pack(side="left", padx=5)
         CTkButton(btn_frame, text="Generate Report", width=150,
-                  command=lambda: self.generate_report(item_number, item_name)).pack(side="left", padx=5)
+                command=lambda: self.generate_report(item_number, item_name))\
+            .pack(side="left", padx=5)
 
     def on_add_image_window_close(self):
         if self.add_image_window is not None:

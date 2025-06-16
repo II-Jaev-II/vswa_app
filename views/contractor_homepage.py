@@ -345,57 +345,111 @@ class HomepageWindow(CTk):
         dynamic_container.pack(pady=10, fill="x", padx=10)
         self.dynamic_rows_entries = []
 
+        # ─── Setup pagination state ─────────────────────────
+        self.dynamic_current_page = 1
+        self.dynamic_rows_per_page = 20
+        self.dynamic_row_cards = []       # holds (frame, entries)
+        self.dynamic_rows_entries = []    # list of entry-dicts for update_all_uploaded_images
+        # ─────────────────────────────────────────────────────
+
+        # Pagination bar for dynamic rows
+        pagination_dyn = CTkFrame(scrollable_frame, corner_radius=0, fg_color="#11151f")
+        pagination_dyn.pack(fill="x", pady=(5,10))
+        
+        # ─── Pagination helper functions ─────────────────────
+        def render_dynamic_rows():
+            total = len(self.dynamic_row_cards)
+            total_pages = max(1, (total + self.dynamic_rows_per_page - 1) // self.dynamic_rows_per_page)
+
+            # clamp current_page
+            if self.dynamic_current_page > total_pages:
+                self.dynamic_current_page = total_pages
+            elif self.dynamic_current_page < 1:
+                self.dynamic_current_page = 1
+
+            # remember where we were
+            prev_page = getattr(self, "_last_rendered_dynamic_page", None)
+
+            # hide all cards, then show only the slice for this page
+            for card, _ in self.dynamic_row_cards:
+                card.pack_forget()
+            start = (self.dynamic_current_page - 1) * self.dynamic_rows_per_page
+            end   = start + self.dynamic_rows_per_page
+            for card, _ in self.dynamic_row_cards[start:end]:
+                card.pack(fill="x", padx=10, pady=10)
+
+            # rebuild Prev / Next buttons
+            for w in pagination_dyn.winfo_children():
+                w.destroy()
+            prev_btn = CTkButton(pagination_dyn, text="‹ Prev", width=80,
+                state="disabled" if self.dynamic_current_page <= 1 else "normal",
+                command=lambda: setattr(self, 'dynamic_current_page', self.dynamic_current_page-1) or render_dynamic_rows()
+            )
+            prev_btn.pack(side="left", padx=5)
+            CTkLabel(pagination_dyn,
+                text=f"Page {self.dynamic_current_page}/{total_pages}",
+                font=("Roboto",12,"bold"), text_color="white").pack(side="left", padx=5)
+            next_btn = CTkButton(pagination_dyn, text="Next ›", width=80,
+                state="disabled" if self.dynamic_current_page >= total_pages else "normal",
+                command=lambda: setattr(self, 'dynamic_current_page', self.dynamic_current_page+1) or render_dynamic_rows()
+            )
+            next_btn.pack(side="left", padx=5)
+
+            # reset scrollbar when moving forward
+            if prev_page is not None and self.dynamic_current_page > prev_page:
+                scrollable_frame._parent_canvas.yview_moveto(0)
+
+            self._last_rendered_dynamic_page = self.dynamic_current_page
+                
         def add_new_dynamic_row(prepopulated_data=None):
             row_card = CTkFrame(dynamic_container, corner_radius=10, fg_color="#3B3B3B")
-            row_card.pack(fill="x", padx=10, pady=10)
             row_entries = {}
-
             phases = ["Before", "During", "After", "Station Limit/Grid"]
             for phase in phases:
                 phase_frame = CTkFrame(row_card, corner_radius=10, fg_color="#4B4B4B")
                 phase_frame.pack(side="left", expand=True, fill="both", padx=10, pady=10)
-                CTkLabel(phase_frame, text=phase, font=("Roboto", 12, "bold"), text_color="white").pack(pady=(10, 5))
-                if phase in ["Before", "During", "After"]:
+                CTkLabel(phase_frame, text=phase, font=("Roboto",12,"bold"), text_color="white").pack(pady=(10,5))
+                if phase in ["Before","During","After"]:
                     preview_label = tk.Label(phase_frame, text="No Image", bg="#4B4B4B", fg="white")
                     preview_label.pack(pady=5)
                     path_entry = CTkEntry(phase_frame, width=150)
                     path_entry.pack(pady=5)
-                    browse_btn = CTkButton(
-                        phase_frame,
-                        text="Browse",
-                        width=80,
-                        command=lambda lbl=preview_label, ent=path_entry: select_pic(lbl, ent)
-                    )
-                    browse_btn.pack(pady=5)
+                    CTkButton(phase_frame, text="Browse", width=80,
+                        command=lambda lbl=preview_label,ent=path_entry: select_pic(lbl,ent)
+                    ).pack(pady=5)
                     row_entries[phase.lower()] = path_entry
-                    if prepopulated_data and prepopulated_data.get(phase.lower(), ""):
-                        file_path = prepopulated_data.get(phase.lower())
-                        path_entry.insert(0, file_path)
-                        if os.path.exists(file_path):
-                            set_preview_pic(file_path, preview_label, path_entry)
+                    if prepopulated_data and prepopulated_data.get(phase.lower()):
+                        path_entry.insert(0, prepopulated_data[phase.lower()])
+                        if os.path.exists(prepopulated_data[phase.lower()]):
+                            set_preview_pic(prepopulated_data[phase.lower()], preview_label, path_entry)
                 else:
-                    path_entry = CTkEntry(phase_frame, width=150)
-                    path_entry.pack(pady=(40, 10))
-                    row_entries["station_limits"] = path_entry
-                    if prepopulated_data and prepopulated_data.get("station_limits", ""):
-                        path_entry.insert(0, prepopulated_data.get("station_limits"))
-            remove_btn = CTkButton(
-                row_card,
-                text="Remove",
-                width=50,
-                fg_color="red",
-                hover_color="darkred",
+                    entry = CTkEntry(phase_frame, width=150)
+                    entry.pack(pady=(40,10))
+                    row_entries['station_limits'] = entry
+                    if prepopulated_data and prepopulated_data.get('station_limits'):
+                        entry.insert(0, prepopulated_data['station_limits'])
+            CTkButton(
+                row_card, text="Remove", width=50, fg_color="red", hover_color="darkred",
                 command=lambda: remove_dynamic_row(row_card, row_entries)
-            )
-            remove_btn.pack(side="left", padx=10, pady=10)
+            ).pack(side="left", padx=10, pady=10)
+
+            self.dynamic_row_cards.append((row_card, row_entries))
             self.dynamic_rows_entries.append(row_entries)
+            total = len(self.dynamic_row_cards)
+            self.dynamic_current_page = (total + self.dynamic_rows_per_page - 1) // self.dynamic_rows_per_page
+            render_dynamic_rows()
 
         def remove_dynamic_row(row_card, row_entries):
-            row_card.destroy()
+            for idx, (card, entries) in enumerate(self.dynamic_row_cards):
+                if card is row_card:
+                    card.destroy()
+                    self.dynamic_row_cards.pop(idx)
+                    break
             if row_entries in self.dynamic_rows_entries:
                 self.dynamic_rows_entries.remove(row_entries)
+            render_dynamic_rows()
 
-        # load saved construction rows
+        # load saved dynamic construction rows
         try:
             conn = sqlite3.connect(self.db_filename)
             cur = conn.cursor()
@@ -407,6 +461,7 @@ class HomepageWindow(CTk):
                 pre = {"before":data[0],"during":data[1],"after":data[2],"station_limits":data[3]}
                 add_new_dynamic_row(pre)
             conn.close()
+            render_dynamic_rows()
         except Exception:
             pass
 
@@ -528,16 +583,18 @@ class HomepageWindow(CTk):
                 upload_date TEXT
             )""")
 
-            # --- pull existing rows (so we can compare and delete replaced files) ---
+            # --- pull existing rows (including their upload_date) ---
             cursor.execute("""
-            SELECT row_index, image_before, image_during, image_after, station_limits, report_generated
+            SELECT row_index, image_before, image_during, image_after,
+                station_limits, report_generated, upload_date
             FROM completed_construction_images
             WHERE item_number=? AND item_name=?
             """, (item_number, item_name))
             existing = {
-                r[0]: (r[1], r[2], r[3], r[4], r[5])
+                r[0]: (r[1], r[2], r[3], r[4], r[5], r[6])
                 for r in cursor.fetchall()
             }
+
             # --- pull existing testing-image paths ---
             cursor.execute("""
             SELECT image_path
@@ -547,10 +604,14 @@ class HomepageWindow(CTk):
             old_testing_paths = [r[0] for r in cursor.fetchall()]
 
             # --- wipe old records ---
-            cursor.execute("DELETE FROM completed_construction_images WHERE item_number=? AND item_name=?",
-                        (item_number, item_name))
-            cursor.execute("DELETE FROM testing_images WHERE item_number=? AND item_name=?",
-                        (item_number, item_name))
+            cursor.execute(
+                "DELETE FROM completed_construction_images WHERE item_number=? AND item_name=?",
+                (item_number, item_name)
+            )
+            cursor.execute(
+                "DELETE FROM testing_images WHERE item_number=? AND item_name=?",
+                (item_number, item_name)
+            )
 
             today = datetime.date.today().isoformat()
 
@@ -589,76 +650,75 @@ class HomepageWindow(CTk):
                 return new_path
 
             # --- static row (row_index=0) ---
-            old0 = existing.get(0, (None, None, None, None, 0))
+            old0 = existing.get(0, (None, None, None, None, 0, None))
             new0 = {}
             for i, phase in enumerate(("before", "during", "after")):
-                new0[phase] = handle_image(
-                    static_data.get(phase),
-                    old0[i],
-                    phase
-                )
+                new0[phase] = handle_image(static_data.get(phase), old0[i], phase)
             new0["station_limits"] = static_data.get("station_limits", "")
-            
-            # … after computing new0 …
-            report_flag = old0[4] if (
-                old0[:4] == (
-                    new0["before"],
-                    new0["during"],
-                    new0["after"],
-                    new0["station_limits"]
-                )
-            ) else 0
+
+            # detect if static row actually changed
+            unchanged0 = (
+                old0[0] == new0["before"] and
+                old0[1] == new0["during"] and
+                old0[2] == new0["after"] and
+                old0[3] == new0["station_limits"]
+            )
+            date0 = old0[5] if unchanged0 else today
+            report_flag = old0[4] if unchanged0 else 0
 
             # --- insert static row ---
             cursor.execute("""
             INSERT INTO completed_construction_images
                 (item_number, item_name, row_index,
-                image_before, image_during, image_after, station_limits,
-                report_generated, upload_date)
+                image_before, image_during, image_after,
+                station_limits, report_generated, upload_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-            item_number, 
-            item_name, 
-            0,
-            new0["before"], 
-            new0["during"], 
-            new0["after"],
-            new0["station_limits"],
-            report_flag,
-            today
+                item_number,
+                item_name,
+                0,
+                new0["before"],
+                new0["during"],
+                new0["after"],
+                new0["station_limits"],
+                report_flag,
+                date0
             ))
 
             # --- dynamic rows (row_index 1..) ---
             for idx, row in enumerate(dynamic_rows, start=1):
-                oldr = existing.get(idx, (None, None, None, None, 0))
+                oldr = existing.get(idx, (None, None, None, None, 0, None))
                 newr = {}
                 for i, phase in enumerate(("before", "during", "after")):
                     val = row[phase].get().strip()
                     newr[phase] = handle_image(val, oldr[i], phase)
                 newr["station_limits"] = row["station_limits"].get().strip()
-                flag = oldr[4] if oldr[:4] == (
-                    newr["before"],
-                    newr["during"],
-                    newr["after"],
-                    newr["station_limits"]
-                ) else 0
+
+                unchanged = (
+                    oldr[0] == newr["before"] and
+                    oldr[1] == newr["during"] and
+                    oldr[2] == newr["after"] and
+                    oldr[3] == newr["station_limits"]
+                )
+                dater = oldr[5] if unchanged else today
+                flag = oldr[4] if unchanged else 0
 
                 cursor.execute("""
                 INSERT INTO completed_construction_images
                     (item_number, item_name, row_index,
-                    image_before, image_during, image_after, station_limits,
-                    report_generated, upload_date)
+                    image_before, image_during, image_after,
+                    station_limits, report_generated, upload_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                item_number,
-                item_name,
-                idx,
-                newr["before"],
-                newr["during"],
-                newr["after"],
-                newr["station_limits"],
-                flag,
-                today
+                    item_number,
+                    item_name,
+                    idx,
+                    newr["before"],
+                    newr["during"],
+                    newr["after"],
+                    newr["station_limits"],
+                    flag,
+                    dater
                 ))
 
             # --- testing rows ---
@@ -674,7 +734,7 @@ class HomepageWindow(CTk):
                     VALUES (?, ?, ?, ?, ?, ?)
                     """, (item_number, item_name, t_idx, name, tp, today))
 
-            # --- delete any old testing-image files the user didn’t re-upload ---
+            # --- delete any old testing-image files not re-uploaded ---
             for old_fp in old_testing_paths:
                 if old_fp not in new_testing_paths and os.path.exists(old_fp):
                     os.remove(old_fp)

@@ -326,23 +326,42 @@ class AdminWindow(CTk):
     # ─── IMAGE FILTERING AND DOWNLOAD METHODS ─────────────────────────
     def apply_date_filter(self, canvas_frame):
         start_date = self.start_date_picker.get_date()
-        end_date = self.end_date_picker.get_date()
+        end_date   = self.end_date_picker.get_date()
 
         # Clear previous images
         for widget in canvas_frame.winfo_children():
             widget.destroy()
 
-        # 1) Completed construction images
+        # 1) Completed construction images — now including item_name
         comp_q = """
-            SELECT image_before, image_during, image_after, upload_date
+            SELECT image_before,
+                   image_during,
+                   image_after,
+                   upload_date,
+                   item_name
             FROM completed_construction_images
             WHERE upload_date BETWEEN ? AND ?
         """
+        # If you DON'T have item_name in this table, instead do:
+        # comp_q = """
+        #     SELECT c.image_before,
+        #            c.image_during,
+        #            c.image_after,
+        #            c.upload_date,
+        #            s.item_name
+        #     FROM completed_construction_images c
+        #     JOIN selected_construction_items s
+        #       ON c.item_number = s.item_number
+        #       AND c.user_id     = s.user_id
+        #     WHERE c.upload_date BETWEEN ? AND ?
+        # """
         comp_rows = self._run_query(comp_q, (start_date, end_date), fetchall=True) or []
 
-        # 2) Testing materials
+        # 2) Testing materials (unchanged)
         test_q = """
-            SELECT upload_date, test_name, image_path
+            SELECT upload_date,
+                   test_name,
+                   image_path
             FROM testing_images
             WHERE upload_date BETWEEN ? AND ?
         """
@@ -355,15 +374,17 @@ class AdminWindow(CTk):
                     ).pack(pady=20)
             return
 
-        # Display completed shots
-        for before, during, after, date_taken in comp_rows:
+        # Display completed shots, now showing item_name and date together
+        for before, during, after, date_taken, item_name in comp_rows:
             frame = CTkFrame(canvas_frame, fg_color="#222222", corner_radius=5)
             frame.pack(pady=10, padx=10, fill="x")
-            CTkLabel(frame, text=f"Date: {date_taken}",
-                     font=("Roboto", 12, "bold"), text_color="white"
+
+            CTkLabel(frame,
+                     text=f"{item_name} – {date_taken}",      # ← item name + date
+                     font=("Roboto", 12, "bold"),
+                     text_color="white"
                     ).pack(pady=5)
 
-            # Only show subframes for existing image paths
             for label_text, img_path in zip(
                     ["Before", "During", "After"],
                     [before, during, after]
@@ -393,7 +414,7 @@ class AdminWindow(CTk):
                              font=("Roboto",10), text_color="red"
                             ).pack(padx=5,pady=5)
 
-        # Display testing materials
+        # Testing materials (unchanged)
         if test_rows:
             CTkLabel(canvas_frame,
                      text="Testing Materials",
@@ -430,15 +451,21 @@ class AdminWindow(CTk):
 
     def download_images_as_zip(self):
         start_date = self.start_date_picker.get_date()
-        end_date = self.end_date_picker.get_date()
+        end_date   = self.end_date_picker.get_date()
 
+        # Now selecting item_name as well
         comp_q = """
-            SELECT image_before, image_during, image_after, upload_date
+            SELECT image_before,
+                   image_during,
+                   image_after,
+                   upload_date,
+                   item_name
             FROM completed_construction_images
             WHERE upload_date BETWEEN ? AND ?
         """
         comp_rows = self._run_query(comp_q, (start_date, end_date), fetchall=True) or []
 
+        # Testing materials unchanged (no item context)
         test_q = """
             SELECT upload_date, test_name, image_path
             FROM testing_images
@@ -461,29 +488,30 @@ class AdminWindow(CTk):
         try:
             with zipfile.ZipFile(zip_path, 'w') as zipf:
 
-                def make_folder(dt):
+                # Helper to turn 'YYYY-MM-DD' into 'Month D, YYYY'
+                def make_date_folder(dt):
                     try:
                         return datetime.strptime(str(dt), '%Y-%m-%d').strftime('%B %-d, %Y')
                     except ValueError:
                         return datetime.strptime(str(dt), '%Y-%m-%d').strftime('%B %d, %Y')
 
-                # Add completed construction images
-                for before, during, after, date_taken in comp_rows:
-                    folder = make_folder(date_taken)
+                # 1) Completed construction images grouped by item_name/date
+                for before, during, after, date_taken, item_name in comp_rows:
+                    date_folder = make_date_folder(date_taken)
                     for img_path in (before, during, after):
                         if img_path and os.path.exists(img_path):
-                            arc = os.path.join(folder, os.path.basename(img_path))
-                            zipf.write(img_path, arcname=arc)
+                            # <Item Name>/<Date>/<filename>
+                            arcname = os.path.join(item_name, date_folder, os.path.basename(img_path))
+                            zipf.write(img_path, arcname=arcname)
 
-                # Add testing materials
+                # 2) Testing materials (if you ever add item context here, you can mirror the above)
                 for date_taken, test_name, img_path in test_rows:
-                    if not img_path:
+                    if not img_path or not os.path.exists(img_path):
                         continue
-                    date_folder = make_folder(date_taken)
-                    test_folder = os.path.join(date_folder, "Material Testing", test_name)
-                    if os.path.exists(img_path):
-                        arc = os.path.join(test_folder, os.path.basename(img_path))
-                        zipf.write(img_path, arcname=arc)
+                    date_folder = make_date_folder(date_taken)
+                    # put them under a “Testing Materials” root
+                    arcname = os.path.join("Testing Materials", date_folder, test_name, os.path.basename(img_path))
+                    zipf.write(img_path, arcname=arcname)
 
             messagebox.showinfo("Success", f"Images successfully saved to {zip_path}")
         except Exception as e:

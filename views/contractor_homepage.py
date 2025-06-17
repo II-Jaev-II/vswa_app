@@ -134,62 +134,105 @@ class HomepageWindow(CTk):
         self.create_custom_table()
 
     def create_custom_table(self):
-        self.table_canvas = tk.Canvas(self.table_container, bg="#1C1C1C", highlightthickness=0)
-        self.scrollbar = tk.Scrollbar(self.table_container, orient="vertical", command=self.table_canvas.yview)
+        # ─── Canvas + Scrollbar ─────────────────────────────────────────
+        self.table_canvas = tk.Canvas(self.table_container,
+                                    bg="#1C1C1C",
+                                    highlightthickness=0)
+        self.scrollbar = tk.Scrollbar(self.table_container,
+                                    orient="vertical",
+                                    command=self.table_canvas.yview)
+
+        # create the scrollable frame inside the canvas
         self.scrollable_frame = CTkFrame(self.table_canvas, fg_color="#1C1C1C")
+        # capture the window ID so we can resize it later
+        self._canvas_window = self.table_canvas.create_window(
+            (0, 0),
+            window=self.scrollable_frame,
+            anchor="nw"
+        )
 
-        self.scrollable_frame.bind("<Configure>", lambda e: self.table_canvas.configure(scrollregion=self.table_canvas.bbox("all")))
-        self.table_canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        # keep scrollregion up to date
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.table_canvas.configure(
+                scrollregion=self.table_canvas.bbox("all")
+            )
+        )
+        # make the inner frame always match the canvas’s width
+        self.table_canvas.bind(
+            "<Configure>",
+            lambda e: self.table_canvas.itemconfigure(
+                self._canvas_window,
+                width=e.width
+            )
+        )
+
         self.table_canvas.configure(yscrollcommand=self.scrollbar.set)
-
         self.table_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
-        
+
         self.table_canvas.bind("<Enter>", self._bind_mousewheel)
         self.table_canvas.bind("<Leave>", self._unbind_mousewheel)
 
-        # 🆕 Updated Headers
-        headers = ["Item Number", "Item Name", "Quantity", "Unit", "Last Attachments", "Actions"]
-        col_widths = [100, 400, 150, 100, 150, 150]
+        # ─── Column setup ───────────────────────────────────────────────
+        headers   = ["Item Number", "Item Name", "Quantity", "Unit", "Last Attachments", "Actions"]
+        min_width = [100,           400,         150,         100,    150,               150]
+        n_cols    = len(headers)
 
-        header_frame = CTkFrame(self.scrollable_frame, fg_color="black")
-        header_frame.grid(row=0, column=0, columnspan=len(headers), sticky="nsew", padx=1, pady=1)
+        # configure the grid on the scrollable_frame
+        for col, mw in enumerate(min_width):
+            self.scrollable_frame.grid_columnconfigure(col,
+                                                    weight=1,
+                                                    minsize=mw)
 
-        for col_index, (col_name, col_width) in enumerate(zip(headers, col_widths)):
-            col_label = CTkLabel(header_frame, text=col_name, font=("Roboto", 12, "bold"), text_color="white",
-                                width=col_width, height=30, fg_color="gray20")
-            col_label.grid(row=0, column=col_index, padx=1, pady=1, sticky="nsew")
+        # ─── Header Row ─────────────────────────────────────────────────
+        for col, text in enumerate(headers):
+            CTkLabel(self.scrollable_frame,
+                    text=text,
+                    font=("Roboto", 12, "bold"),
+                    fg_color="gray20",
+                    text_color="white",
+                    height=30
+                    ).grid(row=0,
+                        column=col,
+                        sticky="nsew",
+                        padx=1, pady=1)
 
-        for col_index in range(len(headers)):
-            self.scrollable_frame.grid_columnconfigure(col_index, weight=1)
+        # ─── Data Rows ──────────────────────────────────────────────────
+        items = self.fetch_selected_construction_items()
+        for r, (item_number, item_name, quantity, unit) in enumerate(items, start=1):
+            bg = "#2E2E2E" if (r % 2) == 0 else "#1C1C1C"
 
-        selected_items = self.fetch_selected_construction_items()
+            # Text columns
+            row_data = [
+                item_number,
+                item_name,
+                quantity,
+                unit,
+                self.get_last_upload_date(item_number, item_name)
+            ]
+            for c, val in enumerate(row_data):
+                CTkLabel(self.scrollable_frame,
+                        text=val,
+                        font=("Roboto", 12),
+                        fg_color=bg,
+                        text_color="white",
+                        height=30
+                        ).grid(row=r,
+                            column=c,
+                            sticky="nsew",
+                            padx=1, pady=1)
 
-        for row_index, item in enumerate(selected_items, start=1):
-            bg_color = "#2E2E2E" if row_index % 2 == 0 else "#1C1C1C"
-            row_frame = CTkFrame(self.scrollable_frame, fg_color="black")
-            row_frame.grid(row=row_index, column=0, columnspan=len(headers), sticky="nsew", padx=1, pady=1)
-
-            # Unpack item info
-            item_number, item_name, quantity, unit = item
-
-            # Get last upload date for this item
-            last_date = self.get_last_upload_date(item_number, item_name)
-
-            # Fill in data columns
-            row_data = [item_number, item_name, quantity, unit, last_date]
-            for col_index, (value, col_width) in enumerate(zip(row_data, col_widths[:-1])):
-                cell_label = CTkLabel(row_frame, text=value, font=("Roboto", 12), text_color="white",
-                                    width=col_width, height=30, fg_color=bg_color)
-                cell_label.grid(row=0, column=col_index, padx=1, pady=1, sticky="nsew")
-
-            # Add action button
-            add_image_button = CTkButton(
-                row_frame, text="Add / Update Image", font=("Roboto", 12),
-                command=lambda i=item_number, n=item_name: self.open_add_image_window(i, n),
-                width=col_widths[-1], height=30
-            )
-            add_image_button.grid(row=0, column=len(col_widths) - 1, padx=1, pady=1, sticky="nsew")
+            # Action button in last column
+            CTkButton(self.scrollable_frame,
+                    text="Add / Update Image",
+                    font=("Roboto", 12),
+                    command=lambda i=item_number, n=item_name: self.open_add_image_window(i, n),
+                    height=30
+                    ).grid(row=r,
+                            column=n_cols-1,
+                            sticky="nsew",
+                            padx=1, pady=1)
 
     def open_add_image_window(self, item_number, item_name):
         # If an add image window is already open, bring it to the front.

@@ -24,7 +24,7 @@ DB_FILENAME = resource_path("database/vswa_db.db")
 class AdminWindow(CTk):
     def __init__(self, user_id, login_app):
         super().__init__()
-        self.title("Homepage - Admin")
+        self.title("Dashboard - Admin")
         self.login_app = login_app
         self.current_user_id = user_id
         self.db_filename = DB_FILENAME
@@ -98,29 +98,48 @@ class AdminWindow(CTk):
         return rows if rows else []
 
     def refresh_construction_items_table(self):
-        # Clear existing rows in the scrollable frame
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
+        # 1) clear out old
+        for w in self.scrollable_frame.winfo_children():
+            w.destroy()
 
-        headers = ["Item Number", "Item Name", "Quantity", "Unit"]
-        col_widths = [150, 400, 150, 100]
+        headers   = ["Item Number", "Item Name", "Quantity", "Unit"]
+        min_width = [150,400,150,100]
 
-        header_frame = CTkFrame(self.scrollable_frame, fg_color="black")
-        header_frame.pack(fill="x", padx=1, pady=1)
-        for header, width in zip(headers, col_widths):
-            col_label = CTkLabel(header_frame, text=header, font=("Roboto", 12, "bold"),
-                                 width=width, height=30, fg_color="gray20", text_color="white")
-            col_label.pack(side="left", padx=1, pady=1)
+        # 2) make a single container that we’ll grid into
+        content = CTkFrame(self.scrollable_frame, fg_color="black")
+        content.pack(fill="both", expand=True)
 
-        selected_items = self.fetch_selected_construction_items()
-        for index, item in enumerate(selected_items):
-            bg_color = "#2E2E2E" if (index + 1) % 2 == 0 else "#1C1C1C"
-            row_frame = CTkFrame(self.scrollable_frame, fg_color="black")
-            row_frame.pack(fill="x", padx=1, pady=1)
-            for value, width in zip(item, col_widths):
-                cell_label = CTkLabel(row_frame, text=value, font=("Roboto", 12),
-                                      width=width, height=30, fg_color=bg_color, text_color="white")
-                cell_label.pack(side="left", padx=1, pady=1)
+        # 3) configure four fluid columns
+        for col, mw in enumerate(min_width):
+            content.grid_columnconfigure(col, weight=1, minsize=mw)
+
+        # 4) header row
+        for col, txt in enumerate(headers):
+            CTkLabel(content,
+                    text=txt,
+                    font=("Roboto",12,"bold"),
+                    height=30,
+                    fg_color="gray20",
+                    text_color="white"
+                    ).grid(row=0,
+                        column=col,
+                        sticky="nsew",
+                        padx=1, pady=1)
+
+        # 5) data rows
+        for r, item in enumerate(self.fetch_selected_construction_items(), start=1):
+            bg = "#2E2E2E" if (r%2)==0 else "#1C1C1C"
+            for col, val in enumerate(item):
+                CTkLabel(content,
+                        text=val,
+                        font=("Roboto",12),
+                        height=30,
+                        fg_color=bg,
+                        text_color="white"
+                        ).grid(row=r,
+                            column=col,
+                            sticky="nsew",
+                            padx=1, pady=1)
 
     # ─── UI SETUP ──────────────────────────────────────────────────────
     def setup_window(self):
@@ -225,7 +244,20 @@ class AdminWindow(CTk):
         self.scrollable_frame.bind(
             "<Configure>", lambda e: self.table_canvas.configure(scrollregion=self.table_canvas.bbox("all"))
         )
-        self.table_canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        self._canvas_window = self.table_canvas.create_window(
+            (0, 0), window=self.scrollable_frame, anchor="nw"
+        )
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.table_canvas.configure(
+                scrollregion=self.table_canvas.bbox("all")
+            )
+        )
+        self.table_canvas.bind(
+            "<Configure>",
+            lambda e: self.table_canvas.itemconfigure(self._canvas_window,
+                                                    width=e.width)
+        )
         self.table_canvas.configure(yscrollcommand=self.scrollbar.set)
         self.table_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
@@ -249,8 +281,7 @@ class AdminWindow(CTk):
             return  # User cancelled
         
         try:
-            # Read the Excel file with header on row 38 (0-indexed 37)
-            df = pd.read_excel(file_path, header=37)
+            df = pd.read_excel(file_path, header=0)
             # Clean up headers by stripping extra spaces/newlines.
             df.columns = [str(col).strip() for col in df.columns]
             # Check for required columns

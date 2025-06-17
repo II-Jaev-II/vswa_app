@@ -48,8 +48,8 @@ class LoginApp(CTk):
         self.password_entry = CTkEntry(master=self, placeholder_text="Password", font=("Arial", 12), width=300, show="*")
         self.password_entry.place(relx=0.5, rely=0.6, anchor="center")
 
-        CTkButton(master=self, text="LOGIN", font=("Arial", 12), width=200, command=self.login).place(relx=0.5, rely=0.7, anchor="center")
-        CTkButton(master=self, text="REGISTER", font=("Arial", 12), width=200, command=self.open_registration_window).place(relx=0.5, rely=0.8, anchor="center")
+        CTkButton(master=self, text="LOGIN", font=("Arial", 14, "bold"), width=200, corner_radius=10, fg_color="#0598ed", hover_color="#047fc7", command=self.login).place(relx=0.5, rely=0.7, anchor="center")
+        CTkButton(master=self, text="REGISTER", font=("Arial", 14, "bold"), width=200, corner_radius=10, fg_color="#02c245", hover_color="#02a63b", command=self.open_registration_window).place(relx=0.5, rely=0.8, anchor="center")
 
     def open_registration_window(self):
         RegistrationWindow(self)
